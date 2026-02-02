@@ -1,0 +1,104 @@
+name: Docker-develop-nightly
+
+on:
+  schedule:
+    - cron: '00 7 * * *'
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check-for-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has_changes: ${{ steps.check_activity.outputs.has_changes }}
+    steps:
+      - name: Checkout develop branch
+        uses: actions/checkout@v4
+        with:
+          ref: develop
+          fetch-depth: 0 # Needed to get full history for the commit check
+
+      - name: Check for recent branch activity
+        id: check_activity
+        run: |
+          COMMIT_COUNT=$(git rev-list --count --since="24 hours ago" HEAD)
+          if [ "$COMMIT_COUNT" -gt 0 ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            echo "Activity found on the 'develop' branch in the last 24 hours ($COMMIT_COUNT commits). Proceeding with the build."
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "No new commits pushed to the 'develop' branch in the last 24 hours. Build will be skipped."
+          fi
+          
+  build:
+    needs: check-for-changes
+    if: needs.check-for-changes.outputs.has_changes == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50 
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    
+    steps:
+      - name: Checkout main branch. #Here we have updated docker file in main branch
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0 
+
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=develop,latest=true
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          no-cache: true
+          build-args: |
+            BRANCH=develop
+
+  test-pull:
+    runs-on: ubuntu-latest
+    needs: build
+    
+    steps:
+      - name: Test Docker Image Pull
+        run: |
+          echo "Logging out of ${{ env.REGISTRY }} to test public pull..."
+          docker logout ${{ env.REGISTRY }}
+          
+          echo "Attempting to pull the 'develop' tag of the image..."
+          # This now correctly pulls the tag that was just built
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:develop
+          
+          echo "Image pulled successfully!"
+          docker images

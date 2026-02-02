@@ -1,28 +1,31 @@
-# syntax=docker/dockerfile:1.4
-FROM python:3.10-slim
+FROM python:3.11-slim AS build
 
-ARG QN_SERVER_REF="develop"
-ARG QN_MQ_REF="develop"
-
-# Install OS deps in one layer
 RUN apt-get update && \
-    apt-get install --yes --no-install-recommends git && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
+    apt-get install --yes --no-install-recommends \
+    openssh-client \ 
+    git \
+    && apt-get clean
 
-# Upgrade pip tooling
+# Update pip
 RUN pip install --upgrade pip setuptools wheel
 
 # Pre-install some known dependency constraints to avoid backtracking
 RUN pip install "pluggy<1.0.0" "readme-renderer>=42.0" "docutils>=0.21.2"
 
-# Clone repos with secrets (BuildKit secret mount)
-RUN --mount=type=secret,id=GH_TOKEN \
-    GH_TOKEN=$(cat /run/secrets/GH_TOKEN) && \
-    git clone https://${GH_TOKEN}@github.com/quant-net/quant-net-mq -b ${QN_MQ_REF} && \
-    git clone https://${GH_TOKEN}@github.com/quant-net/quant-net-plugins --branch develop && \
-    git clone https://${GH_TOKEN}@github.com/quant-net/quant-net-server -b ${QN_SERVER_REF}
+ARG BRANCH
+
+RUN echo "Dockerfile BRANCH value is: ${BRANCH}"
+
+
+RUN git clone --single-branch --branch ${BRANCH} https://github.com/quant-net/qn-mq qn-mq && \
+    cd qn-mq && pip install --no-cache-dir .
+
+RUN git clone --single-branch --branch ${BRANCH} https://github.com/quant-net/qn-plugins qn-plugins
+
+RUN git clone --single-branch --branch ${BRANCH} https://github.com/quant-net/qn-server qn-server
+
 
 # Install Python dependencies with pip cache mount
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install ./quant-net-mq && \
-    pip install ./quant-net-server
+    pip install ./qn-mq && \
+    pip install ./qn-server

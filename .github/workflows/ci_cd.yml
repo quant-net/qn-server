@@ -1,8 +1,8 @@
-name: CI/CD Test
+name: CICD-test-develop-nightly
 
 on:
   schedule:
-    - cron: '30 9 * * *'  # Every day at midnight UTC
+   - cron: '30 9 * * *'  # Every day at midnight UTC
   workflow_dispatch:     # Manual trigger
 
 env:
@@ -11,12 +11,6 @@ env:
   
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
-
-  # Sign containers using cosign
-  SIGN: false
-
-  # Set this to false to skip tests
-  RUN_TESTS: true
 
 jobs:
   build-test:
@@ -39,19 +33,11 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Clone quant-net-plugins repository
+      - name: Clone qn-plugins repository
         run: |
-          git clone --single-branch --branch develop https://${{secrets.QN_RO_PAT}}@github.com/quant-net/quant-net-plugins.git
+          git clone --single-branch --branch develop https://github.com/quant-net/qn-plugins.git quant-net-plugins
           cp -r quant-net-plugins/plugins/schema ./conf/
 
-      # - name: Enable SSH agent
-      #   uses: webfactory/ssh-agent@v0.9.0
-      #   with:
-      #     ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
-
-      # - name: Set GitLab PyPI token
-      #   run: |
-      #     echo "PIP_EXTRA_INDEX_URL=https://__token__:${{ secrets.GITLAB_PAT }}@gitlab.es.net/api/v4/projects/939/packages/pypi/simple" >> $GITHUB_ENV
       - name: Log into registry ${{ env.REGISTRY }}
         uses: docker/login-action@v3
         with:
@@ -61,12 +47,12 @@ jobs:
       
       - name: Build Docker containers
         run: |
-          docker compose -f regression_tests/docker-compose.yml build --ssh default=${SSH_AUTH_SOCK}
+          docker compose -f regression_tests/docker-compose.yml build
 
       - name: Start containers
         run: |
-          ls -l regression_tests
-          ls -l regression_tests/conf
+          # ls -l regression_tests
+          # ls -l regression_tests/conf
           docker compose -f regression_tests/docker-compose.yml up -d
 
       - name: Wait for containers to be ready
@@ -79,8 +65,8 @@ jobs:
     
       - name: Install dependencies for test
         run: |
-          git clone --single-branch --branch develop https://${{secrets.QN_RO_PAT}}@github.com/quant-net/quant-net-mq.git quantnet-mq
-          cd quantnet-mq && pip install --no-cache-dir .
+          git clone --single-branch --branch develop https://github.com/quant-net/qn-mq.git qn-mq
+          cd qn-mq && pip install --no-cache-dir .
     
       - name: Run integration test and save output
         run: |
