@@ -3,7 +3,7 @@ requires = ["setuptools >= 77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "quantnet-controller"
+name = "quantnet-server"
 authors = [
   { name="ESnet", email="quantum@es.net" },
 ]
@@ -22,7 +22,7 @@ dynamic = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/quant-net/quant-net-server"
+Homepage = "https://github.com/quant-net/qn-server"
 
 [tool.setuptools.dynamic]
 dependencies = {file = ["requirements.txt"]}

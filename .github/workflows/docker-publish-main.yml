@@ -1,0 +1,79 @@
+name: Docker-main-manual
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    permissions:
+      contents: read
+      packages: write
+      actions: write 
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0 
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=release
+            type=raw,value=latest
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          no-cache: true
+          build-args: |
+            BRANCH=main
+
+  test-pull:
+    runs-on: ubuntu-latest
+    # This job depends on the 'build' job finishing successfully
+    needs: build
+    
+    steps:
+      - name: Test Docker Image Pull
+        run: |
+          # Log out to ensure we are testing a public pull, not an authenticated one
+          echo "Logging out of ${{ env.REGISTRY }}..."
+          docker logout ${{ env.REGISTRY }}
+          
+          echo "Attempting to pull the public image..."
+          docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:release
+          
+          echo "Image pulled successfully!"
+          docker images
