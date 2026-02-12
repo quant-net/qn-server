@@ -233,11 +233,15 @@ class NetworkGenerator:
             # retrieve the topology
             config = self._config
             response = requests.get(f"{config.quantnet_api_base_url}/topology")
-            if response.json()["status"]["code"] != 0:
+            res_json = response.json()
+            if res_json["status"]["code"] != 0:
                 raise Exception("API request for topology failed")
             else:
-                topology = {"nodes": response.json()["value"][0]["nodes"],
-                            "links": response.json()["value"][0]["links"]}
+                raw_topo = res_json["value"][0]
+                topology = {
+                    "nodes": raw_topo.get("nodes", []),
+                    "links": raw_topo.get("links") or raw_topo.get("edges", [])
+                }
                 if not topology["nodes"] or not topology["links"]:
                     raise Exception("topology is empty")
 

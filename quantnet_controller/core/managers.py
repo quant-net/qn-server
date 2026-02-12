@@ -20,6 +20,7 @@ class ResourceManager:
         self._node_db = DB().handler(DBmodel.Node)
         self._request_db = DB().handler(DBmodel.Request)
         self._is_topo_updated = False
+        self._is_topo_full = False
 
     def node_loader(self, data=None):
         typ = data["systemSettings"]["type"]
@@ -81,12 +82,19 @@ class ResourceManager:
             ret.append(self.node_loader(node))
         return ret
 
-    def build_topology(self):
+    def build_topology(self, full: bool = True):
         color_map = dict()
 
-        def add_node(net, Id, label, group=1, title=None, shape=None, data=None, type=None):
-            net.add_node(Id, size=20, title=label, group=group,
-                         label=label, shape='circle', data=data, type=type)
+        def add_node(net, Id, label, group=1, **kwargs):
+            node_attrs = {
+                'size': 20,
+                'title': label,
+                'group': group,
+                'label': label,
+                'shape': 'circle'
+            }
+            node_attrs.update(kwargs)
+            net.add_node(Id, **node_attrs)
 
         def add_edge(net, src, dst, title=None, dashes=False, arrows='bottom'):
             net.add_edge(src, dst, weight=2, title=title, dashes=dashes,
@@ -99,7 +107,21 @@ class ResourceManager:
         channels = dict()
         for n in nodes:
             nid = str(n.systemSettings.ID)
-            add_node(g, nid, nid, type=str(n.systemSettings.type))
+
+            # Summary statistics always needed
+            nu_q = len(n.qubitSettings.qubits) if hasattr(n, 'qubitSettings') and n.qubitSettings and hasattr(n.qubitSettings, 'qubits') else 0
+            nu_c = len(n.channels) if hasattr(n, 'channels') and n.channels else 0
+
+            if full:
+                # Dump everything from the node definition
+                node_data = json.loads(n.serialize())
+                add_node(g, nid, nid, nu_q=nu_q, nu_c=nu_c, **node_data)
+            else:
+                # Summary mode
+                add_node(g, nid, nid, 
+                         type=str(n.systemSettings.type), 
+                         nu_q=nu_q, 
+                         nu_c=nu_c)
             # now build a channels map
             channels[nid] = dict()
             if not getattr(n, "channels"):
@@ -140,12 +162,24 @@ class ResourceManager:
         handler = DB().handler("Monitor")
         return handler.find(filter={"exp_id": str(exp_id), "eventType": "experimentResult"})
 
-    @property
-    def topology(self):
-        if not self._topo or self._is_topo_updated:
-            self.build_topology()
+    def get_topology(self, full: bool = False):
+        if not self._topo or self._is_topo_updated or self._is_topo_full != full:
+            self.build_topology(full=full)
             self._is_topo_updated = False
-        return node_link_data(self._topo, edges="edges")
+            self._is_topo_full = full
+        data = node_link_data(self._topo, edges="edges")
+
+        # Calculate summary
+        num_qubits = sum(node.get("nu_q", 0) for node in data["nodes"])
+        num_channels = sum(node.get("nu_c", 0) for node in data["nodes"])
+
+        return {
+            "num_nodes": len(data["nodes"]),
+            "num_qubits": num_qubits,
+            "num_channels": num_channels,
+            "nodes": data["nodes"],
+            "edges": data["edges"]
+        }
 
 
 class ControllerContextManager:

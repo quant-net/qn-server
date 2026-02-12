@@ -65,8 +65,8 @@ class RegisterProtocol(ProtocolPlugin):
         logger.info(f"Received getInfo: {request.serialize()}")
         rc = 0
         if request.payload.type == "topology":
-            self._rm.build_topology()
-            return getInfoResponse(status=responseStatus(code=rc, value=Code(rc).name), value=[self._rm.topology])
+            full = request.payload.parameters.as_dict().get("full", False)
+            return getInfoResponse(status=responseStatus(code=rc, value=Code(rc).name), value=[self._rm.get_topology(full=full)])
         elif request.payload.type == "node":
             nodes = self._rm.find_nodes(request.payload.parameters.as_dict())
             for n in nodes:

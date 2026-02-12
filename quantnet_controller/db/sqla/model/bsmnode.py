@@ -120,8 +120,8 @@ def get_bsmnode(id, *, session: "Session"):
 
     if result.channels:
         channels = []
-        channel_keys = ('ID', 'name', 'type', 'direction', 'wavelength', 'power', 'neighbor')
-        neighbor_keys = ('idRef', 'systemRef', 'channelRef', 'loss', 'type', 'loss')
+        channel_keys = ('ID', 'name', 'type', 'direction', 'wavelength', 'power', 'length', 'neighbor')
+        neighbor_keys = ('idRef', 'systemRef', 'channelRef', 'loss', 'type')
 
         for ch in result.channels:
             channel = {k: v for k, v in ch.__dict__.items() if k in channel_keys}
