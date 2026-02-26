@@ -226,7 +226,7 @@ class NetworkGenerator:
 
         # return topo from resource manager
         if local:
-            return self._rm.topology
+            return self._rm.get_topology()
 
         # return topo from remote
         try:
@@ -347,10 +347,23 @@ class NetworkGenerator:
                         return
 
                     # Get the in edges to this node
-                    in_edges = g.in_edges(n, keys=True)
-
-                    # Extract the source nodes (neighbors)
-                    in_neighbors = set([source for source, target, _ in in_edges])
+                    # Handle both directed and undirected graphs
+                    if g.is_directed():
+                        in_edges = g.in_edges(n, keys=True)
+                        # Extract the source nodes (neighbors)
+                        in_neighbors = set([source for source, target, _ in in_edges])
+                    else:
+                        # For undirected graphs, get neighbors and construct edges properly
+                        neighbors = set(g.neighbors(n))
+                        in_edges = []
+                        in_neighbors = set()
+                        for neighbor in neighbors:
+                            # Get all edges between n and neighbor
+                            edge_keys = g.get_edge_data(n, neighbor)
+                            if edge_keys:
+                                for key in edge_keys:
+                                    in_edges.append((neighbor, n, key))
+                                    in_neighbors.add(neighbor)
 
                     # Add children recursively
                     for neighbor in in_neighbors:
@@ -449,12 +462,34 @@ class NetworkGenerator:
         def extract_quantum_links(g):
             # Create a new graph with only quantum links
             d = nx.node_link_data(g, edges="edges")
-            qls = [link for link in d['edges'] if link['title'] == "quantum"]
+            qls = [link for link in d['edges'] if link.get('title') == "quantum"]
             d['edges'] = qls
             return nx.node_link_graph(d, edges="edges")
 
         # Convert to a graph with only quantum links
+        # First try to get quantum links from the converted graph
         q_graph = extract_quantum_links(graph)
+        
+        # If no quantum links found, get them from the original topology
+        # This handles the case where nx.node_link_graph() loses edges in MultiGraphs
+        if len(q_graph.edges()) == 0 and self._rm:
+            try:
+                orig_topo = self._rm.get_topology()
+                orig_edges = orig_topo.get('edges', []) or orig_topo.get('links', [])
+                qls = [link for link in orig_edges if link.get('title') == "quantum"]
+                if qls:
+                    # Create a new graph from just the quantum edges
+                    d = nx.node_link_data(graph, edges="edges")
+                    quantum_topo = {
+                        'directed': False,
+                        'multigraph': True,
+                        'graph': {},
+                        'nodes': d.get('nodes', []),
+                        'edges': qls
+                    }
+                    q_graph = nx.node_link_graph(quantum_topo, edges="edges")
+            except Exception as e:
+                logger.debug(f"Could not recover quantum links from original topology: {e}")
 
         # Create the entanglemnt graph
         ent_graph = nx.MultiGraph()
