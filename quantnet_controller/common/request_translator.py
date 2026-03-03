@@ -5,6 +5,7 @@ import importlib
 import inspect
 from datetime import datetime, timezone, timedelta
 from bitarray import bitarray
+from collections import Counter
 
 from quantnet_controller.common.experimentdefinitions import Experiment, get_num_timeslot, get_timeslot_mask
 from quantnet_controller.common.constants import Constants
@@ -14,7 +15,56 @@ from quantnet_mq import Code
 logger = logging.getLogger(__name__)
 
 
-def match_agent_to_exp(exp_def, path):
+def _validate_agent_requirements(exp_def, available_nodes):
+    """
+    Validate that available nodes satisfy experiment requirements.
+
+    :param exp_def: Experiment definition containing agent sequences.
+    :type exp_def: Experiment
+    :param available_nodes: List of available nodes from path.
+    :type available_nodes: list
+
+    :returns: Tuple of (is_valid, required_types, available_types, missing_types)
+    :rtype: tuple
+
+    :raises ValueError: If validation fails with detailed message about missing agents.
+    """
+    # Extract required agent types from experiment definition
+    required_types = [x.node_type for x in exp_def.agent_sequences]
+    
+    # Extract available agent types from nodes
+    available_types = [
+        x if isinstance(x, str) else x.systemSettings.type
+        for x in available_nodes
+    ]
+    
+    # Count occurrences of each type
+    required_counts = Counter(required_types)
+    available_counts = Counter(available_types)
+    
+    # Find missing agents
+    missing_types = []
+    for req_type, req_count in required_counts.items():
+        avail_count = available_counts.get(req_type, 0)
+        if avail_count < req_count:
+            missing_types.append({
+                'type': req_type,
+                'required': req_count,
+                'available': avail_count
+            })
+    
+    is_valid = len(missing_types) == 0
+    
+    if not is_valid:
+        error_msg = f"Agent validation failed. Missing agents: {missing_types}"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+    
+    logger.debug(f"Agent validation passed. Required: {required_types}, Available: {available_types}")
+    return is_valid, required_types, available_types, missing_types
+
+
+def match_agent_to_exp(exp_def, path, validate=True):
     """
     Match agents from a given path to the requirements of an experiment definition.
 
@@ -22,28 +72,38 @@ def match_agent_to_exp(exp_def, path):
     :type exp_def: Experiment
     :param path: Path object or list of node IDs representing the route.
     :type path: Any
+    :param validate: If True, validate that all required agents are available before matching.
+    :type validate: bool
 
     :returns: List of agent identifiers that satisfy the experiment definition.
     :rtype: list
+
+    :raises ValueError: If validate=True and required agents are not available in the path.
     """
-    mapping = []
     # Handle both Path objects and lists of node IDs
     if hasattr(path, "hops"):
-        nodes = [x for x in path.hops if x.systemSettings.type != "OpticalSwitch"]
+        nodes = [x for x in path.hops if x is not None and x.systemSettings.type != "OpticalSwitch"] if path.hops else []
     else:
         # If path is already a list (from DB), reconstruct nodes
-        # This is a simplified version - you may need to fetch actual node objects
         nodes = path if isinstance(path, list) else []
 
+    # Validate requirements if requested
+    if validate:
+        _validate_agent_requirements(exp_def, nodes)
+
+    # Perform matching with non-mutating approach
+    mapping = []
+    nodes_copy = list(nodes)  # Create copy to avoid mutation
     exp_nodes = [x.node_type for x in exp_def.agent_sequences]
+    
     for node_type in exp_nodes:
-        for i in range(len(nodes)):
-            node_id = nodes[i] if isinstance(nodes[i], str) else nodes[i].systemSettings.ID
-            node_type_actual = nodes[i] if isinstance(nodes[i], str) else nodes[i].systemSettings.type
+        for i in range(len(nodes_copy)):
+            node_id = nodes_copy[i] if isinstance(nodes_copy[i], str) else nodes_copy[i].systemSettings.ID
+            node_type_actual = nodes_copy[i] if isinstance(nodes_copy[i], str) else nodes_copy[i].systemSettings.type
 
             if node_type == node_type_actual:
                 mapping.append(node_id)
-                nodes.remove(nodes[i])
+                nodes_copy.pop(i)
                 break
 
     logger.info(f"Found agents {mapping}")
@@ -189,7 +249,14 @@ class RequestTranslator:
             # Handle None or invalid data
             path = Path.from_node_ids(None)
 
-        agents = match_agent_to_exp(exp_def, path)
+        # Match agents with validation - fail fast if agents don't match
+        try:
+            agents = match_agent_to_exp(exp_def, path, validate=True)
+        except ValueError as e:
+            logger.error(f"Agent validation failed for experiment {parameters['id']}: {e}")
+            if handle_result:
+                handle_result("error", f"Invalid path for experiment: {str(e)}")
+            return Code.FAILED
 
         # Wait for all agents to be ready
         all_agents_ready = True
