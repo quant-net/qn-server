@@ -21,13 +21,13 @@ class Monitor(MonitoringPlugin):
             if obj.eventType == "agentHeartbeat":
                 # Update node registration and don't save
                 pass
-            elif obj.eventType == "experimentResult":
-                logger.info(f"{obj.rid} {obj.eventType} is updated : {obj.value}")
             else:
                 self._db.add(obj.as_dict())
                 if obj.eventType == "agentState":
                     logger.info(f"{obj.rid} {obj.eventType} is updated : "
                                 f"{self._context.rm.get_node_state(obj.rid)}")
+                elif obj.eventType == "experimentResult":
+                    logger.info(f"{obj.rid} {obj.eventType} is updated : {obj.value}")
         except Exception as e:
             logger.warning(f"Failed to update resource : {e}")
 
