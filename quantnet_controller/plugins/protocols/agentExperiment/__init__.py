@@ -108,23 +108,7 @@ class ExperimentProtocol(ProtocolPlugin):
                     if exp:
                         exps = [exp.to_dict()] if isinstance(exp, Request) else [exp]
                     else:
-                        # Try to find in Monitor DB
-                        monitor_db = DB().handler("Monitor")
-                        monitor_results = monitor_db.find(filter={"value.exp_id": str(exp_id), "eventType": "experimentResult"})
                         exps = []
-                        for res in monitor_results:
-                            exps.append({
-                                "id": exp_id,
-                                "type": "experiment",
-                                "status": {"code": 0, "value": "OK"},
-                                "result": res["value"].get("result", {}),
-                                "created_at": res["ts"],
-                                "updated_at": res["ts"],
-                                "phase": "completed",
-                                "agentIds": [res["rid"]],
-                                "expName": res["value"].get("name"),
-                                "is_local": True
-                            })
                 else:
                     agent_ids_filter = params.get("agentIds", [])
                     # If "query" is the only id, it means searching all
@@ -136,30 +120,6 @@ class ExperimentProtocol(ProtocolPlugin):
                     if agent_ids_filter:
                         # Filter RequestManager results
                         exps = [e for e in exps if any(aid in agent_ids_filter for aid in (e.get("agent_ids") or e.get("agentIds") or []))]
-
-                    # Also find local experiments from Monitor DB
-                    monitor_db = DB().handler("Monitor")
-                    
-                    monitor_filter = {"eventType": "experimentResult"}
-                    if agent_ids_filter:
-                        monitor_filter["rid"] = {"$in": agent_ids_filter}
-                        
-                    monitor_results = monitor_db.find(filter=monitor_filter)
-                    for res in monitor_results:
-                        # Avoid duplicates if they somehow exist in both
-                        if not any(e.get("id") == res["value"].get("exp_id") for e in exps):
-                            exps.append({
-                                "id": res["value"].get("exp_id"),
-                                "type": "experiment",
-                                "status": {"code": 0, "value": "OK"},
-                                "result": res["value"].get("result", {}),
-                                "created_at": res["ts"],
-                                "updated_at": res["ts"],
-                                "phase": "completed",
-                                "agentIds": [res["rid"]],
-                                "expName": res["value"].get("name"),
-                                "is_local": True
-                            })
 
                 # Sort by created_at descending
                 exps.sort(key=lambda x: x.get("created_at", 0), reverse=True)
