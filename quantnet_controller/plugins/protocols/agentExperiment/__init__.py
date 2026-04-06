@@ -1,7 +1,8 @@
 import logging
 import os
 from quantnet_controller.common.plugin import ProtocolPlugin, PluginType
-from quantnet_controller.common.request import RequestManager, RequestType, RequestParameter
+from quantnet_controller.common.request import RequestManager, RequestType, RequestParameter, Request
+from quantnet_controller.core import AbstractDatabase as DB
 from quantnet_mq import Code
 from quantnet_mq.schema.models import (
     agentExperiment,
@@ -100,14 +101,28 @@ class ExperimentProtocol(ProtocolPlugin):
 
             try:
                 exp_id = params.get("id")
-                # get_request = params.get("request", False)
 
                 # Get experiment using RequestManager
                 if exp_id:
                     exp = await self.request_manager.get_request(exp_id, include_result=True, raw=True)
-                    exps = [exp.to_dict()] if exp else []
+                    if exp:
+                        exps = [exp.to_dict()] if isinstance(exp, Request) else [exp]
+                    else:
+                        exps = []
                 else:
+                    agent_ids_filter = params.get("agentIds", [])
+                    # If "query" is the only id, it means searching all
+                    if agent_ids_filter == ["query"]:
+                        agent_ids_filter = []
+
                     exps = await self.request_manager.find_requests(raw=True)
+                    
+                    if agent_ids_filter:
+                        # Filter RequestManager results
+                        exps = [e for e in exps if any(aid in agent_ids_filter for aid in (e.get("agent_ids") or e.get("agentIds") or []))]
+
+                # Sort by created_at descending
+                exps.sort(key=lambda x: x.get("created_at", 0), reverse=True)
 
                 return agentExperimentResponse(
                     status=responseStatus(code=Code.OK.value, value=Code.OK.name), experiments=exps
