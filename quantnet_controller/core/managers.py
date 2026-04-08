@@ -167,19 +167,23 @@ class ResourceManager:
             self.build_topology(full=full)
             self._is_topo_updated = False
             self._is_topo_full = full
-        return node_link_data(self._topo, edges="edges")
+        
+        data = node_link_data(self._topo, edges="edges")
 
-        # # Calculate summary
-        # num_qubits = sum(node.get("nu_q", 0) for node in data["nodes"])
-        # num_channels = sum(node.get("nu_c", 0) for node in data["nodes"])
+        if full:
+            # Calculate summary
+            num_qubits = sum(node.get("nu_q", 0) for node in data["nodes"])
+            num_channels = sum(node.get("nu_c", 0) for node in data["nodes"])
 
-        # return {
-        #     "num_nodes": len(data["nodes"]),
-        #     "num_qubits": num_qubits,
-        #     "num_channels": num_channels,
-        #     "nodes": data["nodes"],
-        #     "edges": data["edges"]
-        # }
+            return {
+                "num_nodes": len(data["nodes"]),
+                "num_qubits": num_qubits,
+                "num_channels": num_channels,
+                "nodes": data["nodes"],
+                "edges": data["edges"]
+            }
+
+        return data
 
 
 class ControllerContextManager:
