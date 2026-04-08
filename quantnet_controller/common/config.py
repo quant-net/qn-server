@@ -76,6 +76,7 @@ class Config:
         mq_mongo_port: int = None,
         plugin_path: str = None,
         schema_path: str = None,
+        config_path: str = None
     ):
         if mq_broker_host:
             self.mq_broker_host = mq_broker_host
@@ -89,7 +90,7 @@ class Config:
             self.mq_mongo_host = mq_mongo_host
         else:
             self.mq_mongo_host = config_get("mq", "mongo_host", default="127.0.0.1")
-        if mq_broker_port:
+        if mq_mongo_port:
             self.mq_mongo_port = mq_mongo_port
         else:
             self.mq_mongo_port = config_get("mq", "mongo_port", default="27017")

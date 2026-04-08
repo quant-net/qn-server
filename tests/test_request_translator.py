@@ -2,6 +2,7 @@
 Unit tests for request_translator module, focusing on agent validation logic.
 """
 
+import time
 import pytest
 from unittest.mock import Mock, MagicMock, patch
 from collections import Counter
@@ -46,8 +47,9 @@ class MockSystemSettings:
 
 class MockNode:
     """Mock Node class for testing."""
-    def __init__(self, node_id, node_type):
+    def __init__(self, node_id, node_type, last_seen=None):
         self.systemSettings = MockSystemSettings(node_id, node_type)
+        self.last_seen = last_seen
 
 
 # Test fixtures
@@ -90,9 +92,10 @@ class TestValidateAgentRequirements:
 
     def test_all_agents_available(self, simple_experiment):
         """Test validation passes when all required agents are available."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
         ]
         
         is_valid, required_types, available_types, missing_types = (
@@ -106,7 +109,8 @@ class TestValidateAgentRequirements:
 
     def test_missing_agent_type(self, simple_experiment):
         """Test validation fails when required agent type is missing."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         
         with pytest.raises(ValueError) as exc_info:
             _validate_agent_requirements(simple_experiment, nodes)
@@ -116,7 +120,8 @@ class TestValidateAgentRequirements:
 
     def test_insufficient_agent_count(self, dual_qnode_experiment):
         """Test validation fails when insufficient agents of required type."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         
         with pytest.raises(ValueError) as exc_info:
             _validate_agent_requirements(dual_qnode_experiment, nodes)
@@ -126,10 +131,11 @@ class TestValidateAgentRequirements:
 
     def test_extra_agents_ok(self, simple_experiment):
         """Test validation passes with extra agents beyond requirements."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
-            MockNode("node_3", "QNode"),  # Extra QNode
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
+            MockNode("node_3", "QNode", last_seen=now),  # Extra QNode
         ]
         
         is_valid, required_types, available_types, missing_types = (
@@ -141,10 +147,11 @@ class TestValidateAgentRequirements:
 
     def test_complex_agent_requirements(self, qnode_mnode_qnode_experiment):
         """Test validation with complex requirements (QNode, MNode, QNode)."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
-            MockNode("node_3", "QNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
+            MockNode("node_3", "QNode", last_seen=now),
         ]
         
         is_valid, required_types, available_types, missing_types = (
@@ -167,7 +174,8 @@ class TestValidateAgentRequirements:
     def test_empty_experiment(self):
         """Test validation passes with empty experiment requirements."""
         exp = MockExperiment("EmptyExp", [])
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         
         is_valid, required_types, available_types, missing_types = (
             _validate_agent_requirements(exp, nodes)
@@ -190,8 +198,9 @@ class TestValidateAgentRequirements:
 
     def test_mixed_node_types(self, simple_experiment):
         """Test validation with mixed node objects and string IDs."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
+            MockNode("node_1", "QNode", last_seen=now),
             "MNode",
         ]
         
@@ -204,7 +213,8 @@ class TestValidateAgentRequirements:
 
     def test_error_message_contains_details(self, dual_qnode_experiment):
         """Test that error message contains detailed information about missing agents."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         
         with pytest.raises(ValueError) as exc_info:
             _validate_agent_requirements(dual_qnode_experiment, nodes)
@@ -220,9 +230,10 @@ class TestMatchAgentToExp:
 
     def test_successful_match_with_validation(self, simple_experiment):
         """Test successful agent matching with validation enabled."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
         ]
         path = Mock()
         path.hops = nodes
@@ -233,7 +244,8 @@ class TestMatchAgentToExp:
 
     def test_validation_failure_raises_exception(self, simple_experiment):
         """Test that validation failure raises ValueError."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         path = Mock()
         path.hops = nodes
         
@@ -242,7 +254,8 @@ class TestMatchAgentToExp:
 
     def test_backward_compatibility_validate_false(self, simple_experiment):
         """Test backward compatibility with validate=False."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         path = Mock()
         path.hops = nodes
         
@@ -254,9 +267,10 @@ class TestMatchAgentToExp:
 
     def test_non_mutating_behavior(self, simple_experiment):
         """Test that match_agent_to_exp doesn't mutate the original nodes list."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
         ]
         original_length = len(nodes)
         path = Mock()
@@ -269,10 +283,11 @@ class TestMatchAgentToExp:
 
     def test_order_preservation(self, qnode_mnode_qnode_experiment):
         """Test that agents are matched in the order required by experiment."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
-            MockNode("node_3", "QNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
+            MockNode("node_3", "QNode", last_seen=now),
         ]
         path = Mock()
         path.hops = nodes
@@ -284,10 +299,11 @@ class TestMatchAgentToExp:
 
     def test_optical_switch_filtered(self, simple_experiment):
         """Test that OpticalSwitch nodes are filtered out."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("switch_1", "OpticalSwitch"),
-            MockNode("node_2", "MNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("switch_1", "OpticalSwitch", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
         ]
         path = Mock()
         path.hops = nodes
@@ -299,9 +315,10 @@ class TestMatchAgentToExp:
 
     def test_path_as_list(self, simple_experiment):
         """Test match_agent_to_exp with path as list instead of Path object."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
         ]
         
         result = match_agent_to_exp(simple_experiment, nodes, validate=True)
@@ -326,7 +343,8 @@ class TestMatchAgentToExp:
 
     def test_default_validate_true(self, simple_experiment):
         """Test that validate=True is the default behavior."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         path = Mock()
         path.hops = nodes
         
@@ -341,9 +359,10 @@ class TestIntegration:
 
     def test_validation_workflow_success(self, simple_experiment):
         """Test complete validation workflow with valid path."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "QNode"),
-            MockNode("node_2", "MNode"),
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
         ]
         path = Mock()
         path.hops = nodes
@@ -357,7 +376,8 @@ class TestIntegration:
 
     def test_validation_workflow_failure(self, simple_experiment):
         """Test complete validation workflow with invalid path."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         path = Mock()
         path.hops = nodes
         
@@ -371,6 +391,7 @@ class TestIntegration:
 
     def test_multiple_missing_agents(self):
         """Test validation with multiple missing agent types."""
+        now = time.time()
         exp = MockExperiment(
             "MultiExp",
             [
@@ -379,7 +400,7 @@ class TestIntegration:
                 MockAgentSequence("BSM_seq", "BSMNode"),
             ]
         )
-        nodes = [MockNode("node_1", "QNode")]
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         path = Mock()
         path.hops = nodes
         
@@ -392,7 +413,8 @@ class TestIntegration:
 
     def test_count_mismatch_error_details(self, dual_qnode_experiment):
         """Test that count mismatch error includes required and available counts."""
-        nodes = [MockNode("node_1", "QNode")]
+        now = time.time()
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         path = Mock()
         path.hops = nodes
         
@@ -410,8 +432,9 @@ class TestEdgeCases:
 
     def test_very_large_path(self, simple_experiment):
         """Test validation with very large path."""
+        now = time.time()
         nodes = [
-            MockNode(f"node_{i}", "QNode" if i % 2 == 0 else "MNode")
+            MockNode(f"node_{i}", "QNode" if i % 2 == 0 else "MNode", last_seen=now)
             for i in range(1000)
         ]
         path = Mock()
@@ -423,11 +446,12 @@ class TestEdgeCases:
 
     def test_duplicate_agent_types_in_sequence(self):
         """Test experiment with many duplicate agent types."""
+        now = time.time()
         exp = MockExperiment(
             "ManyQNodes",
             [MockAgentSequence(f"QNode_{i}", "QNode") for i in range(10)]
         )
-        nodes = [MockNode(f"node_{i}", "QNode") for i in range(10)]
+        nodes = [MockNode(f"node_{i}", "QNode", last_seen=now) for i in range(10)]
         path = Mock()
         path.hops = nodes
         
@@ -437,9 +461,10 @@ class TestEdgeCases:
 
     def test_case_sensitive_node_types(self, simple_experiment):
         """Test that node type matching is case-sensitive."""
+        now = time.time()
         nodes = [
-            MockNode("node_1", "qnode"),  # lowercase
-            MockNode("node_2", "MNode"),
+            MockNode("node_1", "qnode", last_seen=now),  # lowercase
+            MockNode("node_2", "MNode", last_seen=now),
         ]
         path = Mock()
         path.hops = nodes
@@ -450,17 +475,150 @@ class TestEdgeCases:
 
     def test_whitespace_in_node_types(self):
         """Test handling of whitespace in node types."""
+        now = time.time()
         exp = MockExperiment(
             "WhitespaceExp",
             [MockAgentSequence("QNode_seq", "QNode ")]  # trailing space
         )
-        nodes = [MockNode("node_1", "QNode")]
+        nodes = [MockNode("node_1", "QNode", last_seen=now)]
         path = Mock()
         path.hops = nodes
         
         # Should fail because "QNode " != "QNode"
         with pytest.raises(ValueError):
             match_agent_to_exp(exp, path, validate=True)
+
+
+# Tests for heartbeat timeout / last_seen validation
+class TestHeartbeatTimeout:
+    """Test suite for last_seen heartbeat timeout filtering in _validate_agent_requirements."""
+
+    def test_recent_heartbeat_passes(self, simple_experiment):
+        """Test that nodes with recent last_seen pass validation."""
+        now = time.time()
+        nodes = [
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now),
+        ]
+
+        is_valid, _, available_types, _ = _validate_agent_requirements(
+            simple_experiment, nodes
+        )
+
+        assert is_valid is True
+        assert "QNode" in available_types
+        assert "MNode" in available_types
+
+    def test_stale_heartbeat_excluded(self, simple_experiment):
+        """Test that nodes with stale last_seen are excluded."""
+        now = time.time()
+        nodes = [
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now - 120),  # 2 minutes ago
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_agent_requirements(simple_experiment, nodes)
+
+        error_msg = str(exc_info.value)
+        assert "MNode" in error_msg
+        assert "stale" in error_msg.lower()
+
+    def test_no_last_seen_treated_as_stale(self, simple_experiment):
+        """Test that nodes without last_seen attribute are treated as stale."""
+        now = time.time()
+        nodes = [
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode"),  # no last_seen
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_agent_requirements(simple_experiment, nodes)
+
+        assert "Agent validation failed" in str(exc_info.value)
+
+    def test_custom_heartbeat_timeout(self, simple_experiment):
+        """Test validation with a custom heartbeat timeout."""
+        now = time.time()
+        nodes = [
+            MockNode("node_1", "QNode", last_seen=now - 30),  # 30s ago
+            MockNode("node_2", "MNode", last_seen=now - 30),
+        ]
+
+        # With 60s timeout, should pass
+        is_valid, _, _, _ = _validate_agent_requirements(
+            simple_experiment, nodes, heartbeat_timeout=60
+        )
+        assert is_valid is True
+
+        # With strict 10s timeout, should fail
+        with pytest.raises(ValueError):
+            _validate_agent_requirements(
+                simple_experiment, nodes, heartbeat_timeout=10
+            )
+
+    def test_all_nodes_stale_fails(self, simple_experiment):
+        """Test that validation fails when all nodes are stale."""
+        now = time.time()
+        nodes = [
+            MockNode("node_1", "QNode", last_seen=now - 300),  # 5 min ago
+            MockNode("node_2", "MNode", last_seen=now - 300),
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_agent_requirements(simple_experiment, nodes)
+
+        assert "Agent validation failed" in str(exc_info.value)
+
+    def test_string_nodes_bypass_heartbeat_check(self, simple_experiment):
+        """Test that string node IDs bypass the heartbeat check."""
+        nodes = ["QNode", "MNode"]
+
+        is_valid, _, _, _ = _validate_agent_requirements(simple_experiment, nodes)
+        assert is_valid is True
+
+    def test_stale_error_includes_node_ids(self, simple_experiment):
+        """Test that the error message includes stale node IDs."""
+        now = time.time()
+        nodes = [
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("stale_mnode", "MNode", last_seen=now - 300),
+        ]
+
+        with pytest.raises(ValueError) as exc_info:
+            _validate_agent_requirements(simple_experiment, nodes)
+
+        error_msg = str(exc_info.value)
+        assert "stale_mnode" in error_msg
+
+    def test_boundary_exactly_at_timeout(self, simple_experiment):
+        """Test node just past the timeout boundary is excluded."""
+        now = time.time()
+        nodes = [
+            MockNode("node_1", "QNode", last_seen=now),
+            MockNode("node_2", "MNode", last_seen=now - 60.001),  # just over 60s
+        ]
+
+        with pytest.raises(ValueError):
+            _validate_agent_requirements(
+                simple_experiment, nodes, heartbeat_timeout=60
+            )
+
+    def test_mixed_stale_and_fresh_same_type(self):
+        """Test that stale nodes of a type don't block fresh ones of the same type."""
+        exp = MockExperiment(
+            "SingleQNode",
+            [MockAgentSequence("QNode_seq", "QNode")]
+        )
+        now = time.time()
+        nodes = [
+            MockNode("stale_q", "QNode", last_seen=now - 300),
+            MockNode("fresh_q", "QNode", last_seen=now),
+        ]
+
+        is_valid, _, available_types, _ = _validate_agent_requirements(exp, nodes)
+        assert is_valid is True
+        assert available_types == ["QNode"]
 
 
 if __name__ == "__main__":

@@ -1,8 +1,9 @@
 import logging
+import time
 from quantnet_controller.common.plugin import MonitoringPlugin, PluginType
 from quantnet_mq.schema.models import monitor, Status, agentMonitorTaskResponse
 from quantnet_mq import Code
-from quantnet_controller.core import AbstractDatabase as DB
+from quantnet_controller.core import AbstractDatabase as DB, DBmodel
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +12,7 @@ class Monitor(MonitoringPlugin):
     def __init__(self, context):
         super().__init__("monitor", PluginType.MONITORING, context)
         self._db = DB().handler("Monitor")
+        self._node_db = DB().handler(DBmodel.Node)
         logger.info(f"Monitor plugin initialized with DB handler: {self._db}")
         self._msg_commands = [
             ("monitor", self.handle_resource_update)
@@ -24,8 +26,15 @@ class Monitor(MonitoringPlugin):
         try:
             obj = monitor.MonitorEvent.from_json(request)
             if obj.eventType == "agentHeartbeat":
-                # Update node registration and don't save
-                pass
+                # Update last_seen timestamp on the node record
+                agent_id = obj.rid
+                now = time.time()
+                self._node_db.update(
+                    {"systemSettings.ID": str(agent_id)},
+                    "last_seen",
+                    now
+                )
+                logger.debug(f"Updated last_seen for node {agent_id} to {now}")
             else:
                 self._db.add(obj.as_dict())
                 if obj.eventType == "agentState":
