@@ -157,9 +157,9 @@ class QuantnetServer:
     async def startup(self) -> None:
 
         def _start_plugins():
-            self.ctx.scheduler.start() if self.ctx.scheduler else logger.warn("No Scheduler plugin found")
-            self.ctx.router.start() if self.ctx.router else logger.warn("No Routing plugin found")
-            self.ctx.monitor.start() if self.ctx.monitor else logger.warn("No Monitoring plugin found")
+            self.ctx.scheduler.start() if self.ctx.scheduler else logger.warning("No Scheduler plugin found")
+            self.ctx.router.start() if self.ctx.router else logger.warning("No Routing plugin found")
+            self.ctx.monitor.start() if self.ctx.monitor else logger.warning("No Monitoring plugin found")
 
         """Create and startup services of all modules"""
         # Create Msg Server

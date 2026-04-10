@@ -2,7 +2,7 @@ import logging
 import time
 from quantnet_controller.common.plugin import MonitoringPlugin, PluginType
 from quantnet_mq.schema.models import monitor, Status, agentMonitorTaskResponse
-from quantnet_mq import Code
+from quantnet_mq import Code, EventType
 from quantnet_controller.core import AbstractDatabase as DB, DBmodel
 
 logger = logging.getLogger(__name__)
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class Monitor(MonitoringPlugin):
     def __init__(self, context):
         super().__init__("monitor", PluginType.MONITORING, context)
-        self._db = DB().handler("Monitor")
+        self._db = DB().handler(DBmodel.Monitor)
         self._node_db = DB().handler(DBmodel.Node)
         logger.info(f"Monitor plugin initialized with DB handler: {self._db}")
         self._msg_commands = [
@@ -25,7 +25,7 @@ class Monitor(MonitoringPlugin):
         logger.debug(f"Received resource update: {request}")
         try:
             obj = monitor.MonitorEvent.from_json(request)
-            if obj.eventType == "agentHeartbeat":
+            if obj.eventType == EventType.AGENT_HEARTBEAT:
                 # Update last_seen timestamp on the node record
                 agent_id = obj.rid
                 now = time.time()
@@ -37,12 +37,12 @@ class Monitor(MonitoringPlugin):
                 logger.debug(f"Updated last_seen for node {agent_id} to {now}")
             else:
                 self._db.add(obj.as_dict())
-                if obj.eventType == "agentState":
+                if obj.eventType == EventType.AGENT_STATE:
                     logger.info(f"{obj.rid} {obj.eventType} is updated : "
                                 f"{self._context.rm.get_node_state(obj.rid)}")
-                elif obj.eventType == "experimentResult":
+                elif obj.eventType == EventType.EXPERIMENT_RESULT:
                     logger.info(f"{obj.rid} {obj.eventType} is updated : {obj.value}")
-                elif obj.eventType == "agentTaskResult":
+                elif obj.eventType == EventType.AGENT_TASK_RESULT:
                     logger.info(f"{obj.rid} {obj.eventType} is updated : {obj.value}")
         except Exception as e:
             logger.warning(f"Failed to update resource : {e}")
@@ -54,7 +54,7 @@ class Monitor(MonitoringPlugin):
             if agent_id:
                 agent_id = str(agent_id).strip()
             
-            filter = {"eventType": "agentTaskResult"}
+            filter = {"eventType": EventType.AGENT_TASK_RESULT}
             if agent_id:
                 filter["rid"] = agent_id
             
