@@ -1,5 +1,6 @@
 import logging
 import json
+import time
 import asyncio
 import importlib
 import inspect
@@ -15,33 +16,72 @@ from quantnet_mq import Code
 logger = logging.getLogger(__name__)
 
 
-def _validate_agent_requirements(exp_def, available_nodes):
+def _validate_agent_requirements(exp_def, available_nodes, heartbeat_timeout=None):
     """
     Validate that available nodes satisfy experiment requirements.
+
+    Nodes whose ``last_seen`` Unix timestamp is older than *heartbeat_timeout*
+    seconds are treated as unavailable and excluded before the type-count check.
 
     :param exp_def: Experiment definition containing agent sequences.
     :type exp_def: Experiment
     :param available_nodes: List of available nodes from path.
     :type available_nodes: list
+    :param heartbeat_timeout: Maximum age in seconds of a node heartbeat before
+        it is considered stale.  Defaults to ``Constants.NODE_HEARTBEAT_TIMEOUT``.
+    :type heartbeat_timeout: int | float | None
 
     :returns: Tuple of (is_valid, required_types, available_types, missing_types)
     :rtype: tuple
 
     :raises ValueError: If validation fails with detailed message about missing agents.
     """
+    if heartbeat_timeout is None:
+        heartbeat_timeout = Constants.NODE_HEARTBEAT_TIMEOUT
+
+    now = time.time()
+
+    # Filter out nodes that have not sent a heartbeat within the timeout
+    reachable_nodes = []
+    stale_nodes = []
+    for node in available_nodes:
+        if isinstance(node, str):
+            # String node IDs don't carry last_seen; assume reachable
+            reachable_nodes.append(node)
+            continue
+
+        last_seen = getattr(node, "last_seen", None)
+        if last_seen is None:
+            # No heartbeat recorded yet – treat as stale
+            node_id = node.systemSettings.ID if hasattr(node, "systemSettings") else str(node)
+            stale_nodes.append(node_id)
+            logger.warning(f"Node {node_id} has no last_seen timestamp, treating as unavailable")
+            continue
+
+        age = now - last_seen
+        if age > heartbeat_timeout:
+            node_id = node.systemSettings.ID
+            stale_nodes.append(node_id)
+            logger.warning(
+                f"Node {node_id} last seen {age:.1f}s ago "
+                f"(timeout={heartbeat_timeout}s), treating as unavailable"
+            )
+        else:
+            reachable_nodes.append(node)
+
     # Extract required agent types from experiment definition
     required_types = [x.node_type for x in exp_def.agent_sequences]
-    
-    # Extract available agent types from nodes
+
+    # Extract available agent types from reachable nodes only
     available_types = [
         x if isinstance(x, str) else x.systemSettings.type
-        for x in available_nodes
+        for x in reachable_nodes
     ]
-    
+
     # Count occurrences of each type
     required_counts = Counter(required_types)
     available_counts = Counter(available_types)
-    
+
     # Find missing agents
     missing_types = []
     for req_type, req_count in required_counts.items():
@@ -52,14 +92,16 @@ def _validate_agent_requirements(exp_def, available_nodes):
                 'required': req_count,
                 'available': avail_count
             })
-    
+
     is_valid = len(missing_types) == 0
-    
+
     if not is_valid:
         error_msg = f"Agent validation failed. Missing agents: {missing_types}"
+        if stale_nodes:
+            error_msg += f" (stale nodes excluded: {stale_nodes})"
         logger.error(error_msg)
         raise ValueError(error_msg)
-    
+
     logger.debug(f"Agent validation passed. Required: {required_types}, Available: {available_types}")
     return is_valid, required_types, available_types, missing_types
 

@@ -8,6 +8,7 @@ import types
 import networkx as nx
 from networkx import node_link_data
 import quantnet_mq.schema.models as models
+from quantnet_mq import EventType
 from quantnet_controller.common.config import Config
 from quantnet_controller.core import AbstractDatabase as DB, DBmodel
 
@@ -23,43 +24,66 @@ class ResourceManager:
         self._is_topo_full = False
 
     def node_loader(self, data=None):
-        typ = data["systemSettings"]["type"]
-        cls = getattr(models, typ)
+        if data is None:
+            raise ValueError("node_loader: data parameter cannot be None")
+
+        try:
+            typ = data["systemSettings"]["type"]
+        except (KeyError, TypeError) as e:
+            raise ValueError(f"node_loader: invalid data structure - missing systemSettings.type: {e}")
+
+        cls = getattr(models, typ, None)
+        if cls is None:
+            raise ValueError(f"node_loader: unknown node type '{typ}' not found in models")
+
         return cls(**data)
 
+    def _handle_request(self, req):
+        """Capture and store incoming request for tracking."""
+        try:
+            req_data = {
+                "agentId": getattr(req, "agentId", None),
+                "cmd": getattr(req, "cmd", None),
+            }
+            self._request_db.add(req_data)
+        except Exception as e:
+            logger.warning(f"Failed to record request: {e}")
+
     def request_cb_wrapper(self, orig_cb):
-        """ Capture all requests to the controller """
+        """Capture all requests to the controller"""
+
         async def wrapper(req):
             self._handle_request(req)
             res = orig_cb(req)
             if isinstance(res, types.CoroutineType):
                 res = await res
             return res
+
         return wrapper
 
     async def handle_register(self, node):
-        """ handle registration of node
-        """
+        """handle registration of node"""
         if node is None:
-            raise Exception(
-                f"{ResourceManager.handle_register.__qualname__}: invalid input parameter")
+            raise ValueError("handle_register: invalid input parameter - node is None")
 
         try:
             payload = node.payload
             sysid = payload.systemSettings.ID
             ntype = payload.systemSettings.type
-            logger.info(f'Registering {ntype} {sysid} from agent {node.agentId}')
+            logger.info(f"Registering {ntype} {sysid} from agent {node.agentId}")
             jsobj = json.loads(payload.serialize())
 
             # Save to Database
             self._node_db.upsert({"systemSettings.ID": str(sysid)}, jsobj)
-            logger.info(f'Registering {ntype} {sysid} succeed.')
+            logger.info(f"Registering {ntype} {sysid} succeed.")
             self._is_topo_updated = True
         except Exception as e:
-            logger.warn(f'Registering {ntype} {sysid} failed: {e}')
-            raise e
+            logger.warning(f"Registering {ntype} {sysid} failed: {e}")
+            raise
 
-    def find_nodes(self, params=dict(), **kwargs):
+    def find_nodes(self, params=None, **kwargs):
+        if params is None:
+            params = {}
         try:
             rdict = kwargs.pop("dict", False)
             nodes = self._node_db.find(filter=params, **kwargs)
@@ -70,10 +94,12 @@ class ResourceManager:
                 ret.append(self.node_loader(n))
             return ret
         except Exception as e:
-            raise Exception(
-                f"An error occured in find_nodes: {filter}: {e.args}")
+            raise Exception(f"An error occured in find_nodes: {params}: {e.args}")
 
     def get_nodes(self, *nnames):
+        if not nnames:
+            raise ValueError("get_nodes: at least one node name must be provided")
+
         ret = list()
         for n in nnames:
             node = self._node_db.get({"systemSettings.ID": str(n)})
@@ -86,19 +112,25 @@ class ResourceManager:
         color_map = dict()
 
         def add_node(net, Id, label, group=1, **kwargs):
-            node_attrs = {
-                'size': 20,
-                'title': label,
-                'group': group,
-                'label': label,
-                'shape': 'circle'
-            }
-            node_attrs.update(kwargs)
+            if full:
+                node_attrs = kwargs
+            else:
+                node_attrs = {"size": 20, "title": label, "group": group, "label": label, "shape": "circle"}
+                node_attrs.update(kwargs)
             net.add_node(Id, **node_attrs)
 
-        def add_edge(net, src, dst, title=None, dashes=False, arrows='bottom'):
-            net.add_edge(src, dst, weight=2, title=title, dashes=dashes,
-                         arrows=arrows, color=color_map.get(title))
+        def add_edge(net, src, dst, title=None, dashes=False, arrows="bottom"):
+            if full:
+                edge_attrs = {"title": title}
+            else:
+                edge_attrs = {
+                    "weight": 2,
+                    "title": title,
+                    "dashes": dashes,
+                    "arrows": arrows,
+                    "color": color_map.get(title),
+                }
+            net.add_edge(src, dst, **edge_attrs)
 
         g = nx.MultiDiGraph()
 
@@ -109,8 +141,11 @@ class ResourceManager:
             nid = str(n.systemSettings.ID)
 
             # Summary statistics always needed
-            nu_q = len(n.qubitSettings.qubits) if hasattr(n, 'qubitSettings') and n.qubitSettings and hasattr(n.qubitSettings, 'qubits') else 0
-            nu_c = len(n.channels) if hasattr(n, 'channels') and n.channels else 0
+            qubit_settings = getattr(n, "qubitSettings", None)
+            qubits = getattr(qubit_settings, "qubits", None) if qubit_settings else None
+            nu_q = len(qubits) if qubits else 0
+            node_channels = getattr(n, "channels", None)
+            nu_c = len(node_channels) if node_channels else 0
 
             if full:
                 # Dump everything from the node definition
@@ -118,15 +153,11 @@ class ResourceManager:
                 add_node(g, nid, nid, nu_q=nu_q, nu_c=nu_c, **node_data)
             else:
                 # Summary mode
-                add_node(g, nid, nid, 
-                         type=str(n.systemSettings.type), 
-                         nu_q=nu_q, 
-                         nu_c=nu_c)
+                add_node(g, nid, nid, type=str(n.systemSettings.type), nu_q=nu_q, nu_c=nu_c)
             # now build a channels map
             channels[nid] = dict()
             if not getattr(n, "channels"):
-                logger.error(
-                    f"Error: Node {nid} does not have expected channels attribute")
+                logger.error(f"Error: Node {nid} does not have expected channels attribute")
                 continue
             for c in n.channels:
                 channels[nid][c.ID] = c
@@ -136,56 +167,69 @@ class ResourceManager:
                 if c.direction == "out":
                     rid = channels.get(c.neighbor.systemRef)
                     if not rid:
-                        logger.warn(f"Warning: {k}: {cid}, could not find remote neighbor \
-                        system {c.neighbor.systemRef}")
+                        logger.warning(
+                            f"Warning: {k}: {cid}, could not find remote neighbor "
+                            f"system {c.neighbor.systemRef}"
+                        )
                         continue
                     rcid = rid.get(c.neighbor.channelRef)
                     if not rcid:
-                        logger.warn(f"Warning: {k}: {cid}, could not find remote neighbor channel \
-                        {c.neighbor.channelRef}")
+                        logger.warning(
+                            f"Warning: {k}: {cid}, could not find remote neighbor channel "
+                            f"{c.neighbor.channelRef}"
+                        )
                         continue
                     if rcid.direction == "in":
-                        add_edge(g, str(k), str(
-                            c.neighbor.systemRef), str(c.type))
+                        add_edge(g, str(k), str(c.neighbor.systemRef), str(c.type))
                     else:
-                        logger.error(
-                            f"Error: {k}: {cid} out does not match {c.neighbor.systemRef}: {rcid.ID} in")
+                        logger.error(f"Error: {k}: {cid} out does not match {c.neighbor.systemRef}: {rcid.ID} in")
         self._topo = g
 
     def get_node_state(self, agentid):
-        handler = DB().handler("Monitor")
-        res = handler.find(filter={"rid": str(agentid), "eventType": "agentState"},
-                           limit=1, sort={"ts": -1})
+        handler = DB().handler(DBmodel.Monitor)
+        res = handler.find(filter={"rid": str(agentid), "eventType": EventType.AGENT_STATE}, limit=1, sort={"ts": -1})
         return res[0] if res else None
 
     def get_exp_results(self, exp_id):
-        handler = DB().handler("Monitor")
-        return handler.find(filter={"exp_id": str(exp_id), "eventType": "experimentResult"})
+        handler = DB().handler(DBmodel.Monitor)
+        return handler.find(filter={"exp_id": str(exp_id), "eventType": EventType.EXPERIMENT_RESULT})
 
     def get_topology(self, full: bool = False):
         if not self._topo or self._is_topo_updated or self._is_topo_full != full:
             self.build_topology(full=full)
             self._is_topo_updated = False
             self._is_topo_full = full
-        data = node_link_data(self._topo, edges="edges")
 
-        # Calculate summary
-        num_qubits = sum(node.get("nu_q", 0) for node in data["nodes"])
-        num_channels = sum(node.get("nu_c", 0) for node in data["nodes"])
+        if full:
+            # Manually build nodes and edges to avoid NetworkX metadata (directed, graph, etc.)
+            nodes = [{"id": str(n), **d} for n, d in self._topo.nodes(data=True)]
+            edges = [{"source": str(u), "target": str(v), **d} for u, v, d in self._topo.edges(data=True)]
 
-        return {
-            "num_nodes": len(data["nodes"]),
-            "num_qubits": num_qubits,
-            "num_channels": num_channels,
-            "nodes": data["nodes"],
-            "edges": data["edges"]
-        }
+            return {
+                "num_nodes": len(nodes),
+                "num_qubits": sum(node.get("nu_q", 0) for node in nodes),
+                "num_channels": sum(node.get("nu_c", 0) for node in nodes),
+                "nodes": nodes,
+                "edges": edges,
+            }
+
+        return node_link_data(self._topo, edges="edges")
 
 
 class ControllerContextManager:
-    def __init__(self, router=None, scheduler=None, monitor=None, protocols=None,
-                 rpcserver=None, rpcclient=None, msgserver=None, msgclient=None,
-                 config: Config = None, rm: ResourceManager = None):
+    def __init__(
+        self,
+        router=None,
+        scheduler=None,
+        monitor=None,
+        protocols=None,
+        rpcserver=None,
+        rpcclient=None,
+        msgserver=None,
+        msgclient=None,
+        config: Config = None,
+        rm: ResourceManager = None,
+    ):
         self._plugins = {"router": router, "scheduler": scheduler, "monitor": monitor}
         self._protocols = protocols
         self._rpcserver = rpcserver
