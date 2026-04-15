@@ -61,7 +61,17 @@ def ask_exit(*args):
     help="Specify a path containing additional schema files",
     show_default=True
 )
+@click.option(
+    "-c",
+    "--config",
+    "config_file",
+    type=str,
+    default=None,
+    help="Specify a configuration file",
+    show_default=True
+)
 def main(
+    config_file,
     mq_broker_host,
     mq_broker_port,
     mq_mongo_host,
@@ -70,6 +80,7 @@ def main(
     schema_path
 ) -> None:
     run(
+        config_file,
         mq_broker_host,
         mq_broker_port,
         mq_mongo_host,
@@ -80,6 +91,7 @@ def main(
 
 
 def run(
+    config_file,
     mq_broker_host,
     mq_broker_port,
     mq_mongo_host,
@@ -89,6 +101,7 @@ def run(
 ) -> None:
     # Create config
     config = Config(
+        config_file=config_file,
         mq_broker_host=mq_broker_host,
         mq_broker_port=mq_broker_port,
         mq_mongo_host=mq_mongo_host,
@@ -96,6 +109,16 @@ def run(
         plugin_path=plugin_path,
         schema_path=schema_path
     )
+
+    if not config.config_file:
+        import logging
+        logging.getLogger(__name__).warning(
+            "No configuration file found, continuing with defaults.\n"
+            "\tThe quant-net server looks in the following directories for a configuration file, in order:\n"
+            "\t(1) --config CLI argument\n"
+            "\t(2) $QUANTNET_HOME/etc/quantnet.cfg\n"
+            "\t(3) /opt/quantnet/etc/quantnet.cfg"
+        )
 
     setup_logging()
 

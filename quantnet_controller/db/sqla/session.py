@@ -16,7 +16,7 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session, Session
 from sqlalchemy.pool import QueuePool, SingletonThreadPool, NullPool
 
-from quantnet_controller.common.config import config_get
+from quantnet_controller.common.config import Config
 from quantnet_controller.common.exception import QuantnetException
 from quantnet_controller.common.utils import retrying
 from quantnet_controller.common.extra import import_extras
@@ -39,14 +39,14 @@ except Exception:
 DATABASE_SECTION = "database"
 try:
     if CURRENT_COMPONENT:
-        sql_connection = config_get(f"{CURRENT_COMPONENT}-database", "default", check_config_table=False).strip()
+        sql_connection = Config().get(f"{CURRENT_COMPONENT}-database", "default").strip()
         if sql_connection and len(sql_connection):
             DATABASE_SECTION = f"{CURRENT_COMPONENT}-database"
 except Exception:
     pass
 
 BASE = declarative_base()
-DEFAULT_SCHEMA_NAME = config_get(DATABASE_SECTION, "schema", raise_exception=False, default=None)
+DEFAULT_SCHEMA_NAME = Config().get(DATABASE_SECTION, "schema", default=None)
 if DEFAULT_SCHEMA_NAME:
     BASE.metadata.schema = DEFAULT_SCHEMA_NAME
 
@@ -183,7 +183,7 @@ def get_engine():
     """
     global _ENGINE
     if not _ENGINE:
-        sql_connection = config_get(DATABASE_SECTION, "default", check_config_table=False)
+        sql_connection = Config().get(DATABASE_SECTION, "default")
         config_params = [
             ("pool_size", int),
             ("max_overflow", int),
@@ -201,7 +201,7 @@ def get_engine():
             params["connect_args"] = {"conv": conv}
         for param, param_type in config_params:
             try:
-                params[param] = param_type(config_get(DATABASE_SECTION, param, check_config_table=False))
+                params[param] = param_type(Config().get(DATABASE_SECTION, param))
             except Exception:
                 pass
         # Using sqlAlchemy 2.0 with future=True.
@@ -240,7 +240,7 @@ def get_dump_engine(echo=False):
         else:
             print(statement)
 
-    sql_connection = config_get(DATABASE_SECTION, "default", check_config_table=False)
+    sql_connection = Config().get(DATABASE_SECTION, "default")
 
     engine = create_engine(sql_connection, echo=echo, strategy="mock", executor=dump)
     return engine

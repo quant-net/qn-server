@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy.engine import url  # , make_url
 from urllib.parse import urlparse
 from functools import wraps
-from quantnet_controller.common.config import config_get
+from quantnet_controller.common.config import Config
 from quantnet_controller.utils.util import import_classes_from_package
 from quantnet_controller.db.nosql.collection import Collection
 from quantnet_controller.db.sqla.model import Blob
@@ -99,7 +99,7 @@ def broker(func: "Callable[P, R]"):
     def wrapper(*args: "P.args", broker: "Optional[Broker]" = None, **kwargs):
         global __BROKER
         if __BROKER is None:
-            url = config_get(DATABASE_SECTION, 'default',
+            url = Config().get(DATABASE_SECTION, 'default',
                              default="mongodb://localhost",
                              check_config_table=False)
             broker_type = check_database_type(url)

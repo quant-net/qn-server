@@ -4,7 +4,7 @@ import importlib
 import sys
 
 from bson.objectid import ObjectId
-from quantnet_controller.common.config import config_get
+from quantnet_controller.common.config import Config
 from quantnet_controller.common.utils import get_uri_path
 
 
@@ -131,7 +131,7 @@ class DBLoader:
             exit(-1)
         while True:
             try:
-                url = config_get('database', 'default',
+                url = Config().get('database', 'default',
                                  default="mongodb://localhost",
                                  check_config_table=False)
                 path = get_uri_path(url)
