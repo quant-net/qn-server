@@ -428,7 +428,6 @@ class RequestTranslator:
         try:
             start_time, timeslots = await self.get_slots_to_allocate(agent_ids, exp)
             submit_tasks = []
-            getResult_tasks = []
 
             for idx in range(len(exp.agent_sequences)):
                 agent_sequence = exp.agent_sequences[idx]
@@ -458,21 +457,30 @@ class RequestTranslator:
                     "allocations": allocations,
                 }
                 submit_tasks.append(self.submit(agent_id, schedule_params))
-                getResult_tasks.append(self.getResult(agent_id, {"expid": exp_id}))
 
             submit_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
-            for result in submit_results:
+            for idx, result in enumerate(submit_results):
                 if isinstance(result, Exception):
-                    raise Exception("Failed to allocate task to agents")
+                    raise Exception(f"Failed to allocate task to agent {agent_ids[idx]}: {result}")
                 if result["status"]["code"] != Code.OK.value:
-                    raise Exception("Failed to allocate task to agents")
+                    raise Exception(
+                        f"Failed to allocate task to agent {agent_ids[idx]}: "
+                        f"status {result['status']['code']}"
+                    )
 
+            getResult_tasks = [
+                self.getResult(agent_id, {"expid": exp_id})
+                for agent_id in agent_ids
+            ]
             agent_results = await asyncio.gather(*getResult_tasks, return_exceptions=True)
-            for result in agent_results:
+            for idx, result in enumerate(agent_results):
                 if isinstance(result, Exception):
-                    raise Exception("Failed to get result")
+                    raise Exception(f"Failed to get result from agent {agent_ids[idx]}: {result}")
                 if result["status"]["code"] not in [Code.OK.value, Code.QUEUED.value]:
-                    raise Exception("Failed to get result")
+                    raise Exception(
+                        f"Failed to get result from agent {agent_ids[idx]}: "
+                        f"status {result['status']['code']}"
+                    )
 
             # Store results directly without nesting - each agent's result is stored by agent_id
             if handle_result:
