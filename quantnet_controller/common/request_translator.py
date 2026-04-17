@@ -493,7 +493,7 @@ class RequestTranslator:
             logger.info(f"Experiment completed with results from {len(agent_results)} agents")
             return Code.OK
         except Exception as e:
-            logger.error(f"Failed to handle timeslot allocation: {e.args[0]}")
+            logger.error(f"Failed to handle timeslot allocation: {e}")
             if handle_result:
                 handle_result("error", str(e))
             return Code.FAILED
