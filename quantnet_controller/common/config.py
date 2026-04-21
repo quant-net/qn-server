@@ -13,6 +13,10 @@ log = logging.getLogger(__name__)
 
 def find_config_file(cli_config_file=None):
     if cli_config_file:
+        if not os.path.exists(cli_config_file):
+            import sys
+            print(f"Error: Specified configuration file '{cli_config_file}' does not exist.", file=sys.stderr)
+            sys.exit(3)
         return cli_config_file
 
     paths = []
