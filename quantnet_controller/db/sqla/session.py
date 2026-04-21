@@ -16,7 +16,6 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session, Session
 from sqlalchemy.pool import QueuePool, SingletonThreadPool, NullPool
 
-from quantnet_controller.common.config import Config
 from quantnet_controller.common.exception import QuantnetException
 from quantnet_controller.common.utils import retrying
 from quantnet_controller.common.extra import import_extras
@@ -36,19 +35,28 @@ try:
 except Exception:
     CURRENT_COMPONENT = None
 
-DATABASE_SECTION = "database"
-try:
-    if CURRENT_COMPONENT:
-        sql_connection = Config().get(f"{CURRENT_COMPONENT}-database", "default").strip()
-        if sql_connection and len(sql_connection):
-            DATABASE_SECTION = f"{CURRENT_COMPONENT}-database"
-except Exception:
-    pass
+
+__SESSION_CONFIG = None
+
+def init_session_config(config):
+    global __SESSION_CONFIG
+    __SESSION_CONFIG = config
+
+def get_session_config():
+    return __SESSION_CONFIG
+
+def _get_database_section():
+    if CURRENT_COMPONENT and __SESSION_CONFIG:
+        try:
+            sql_connection = __SESSION_CONFIG.get(f"{CURRENT_COMPONENT}-database", "default")
+            if sql_connection and len(sql_connection.strip()):
+                return f"{CURRENT_COMPONENT}-database"
+        except Exception:
+            pass
+    return "database"
+
 
 BASE = declarative_base()
-DEFAULT_SCHEMA_NAME = Config().get(DATABASE_SECTION, "schema", default=None)
-if DEFAULT_SCHEMA_NAME:
-    BASE.metadata.schema = DEFAULT_SCHEMA_NAME
 
 _MAKER, _ENGINE, _LOCK = None, None, Lock()
 
@@ -104,8 +112,8 @@ def mysql_convert_decimal_to_float(pymysql=False):
         return converter
 
     if pymysql:
-        if not EXTRA_MODULES['pymysql']:
-            raise QuantnetException('Trying to use pymysql without having it installed!')
+        if not EXTRA_MODULES["pymysql"]:
+            raise QuantnetException("Trying to use pymysql without having it installed!")
         else:
             converter = pymysql_converter()
     elif EXTRA_MODULES["MySQLdb"]:
@@ -118,7 +126,7 @@ def mysql_convert_decimal_to_float(pymysql=False):
     elif EXTRA_MODULES["pymysql"]:
         converter = pymysql_converter()
     else:
-        raise QuantnetException('Trying to use MySQL without mysql-python or pymysql installed!')
+        raise QuantnetException("Trying to use MySQL without mysql-python or pymysql installed!")
 
     return converter
 
@@ -183,7 +191,13 @@ def get_engine():
     """
     global _ENGINE
     if not _ENGINE:
-        sql_connection = Config().get(DATABASE_SECTION, "default")
+        database_section = _get_database_section()
+
+        default_schema_name = __SESSION_CONFIG.get(database_section, "schema", default=None) if __SESSION_CONFIG else None
+        if default_schema_name:
+            BASE.metadata.schema = default_schema_name
+
+        sql_connection = __SESSION_CONFIG.get(database_section, "default") if __SESSION_CONFIG else None
         config_params = [
             ("pool_size", int),
             ("max_overflow", int),
@@ -201,7 +215,7 @@ def get_engine():
             params["connect_args"] = {"conv": conv}
         for param, param_type in config_params:
             try:
-                params[param] = param_type(Config().get(DATABASE_SECTION, param))
+                params[param] = param_type(__SESSION_CONFIG.get(database_section, param)) if __SESSION_CONFIG else None
             except Exception:
                 pass
         # Using sqlAlchemy 2.0 with future=True.
@@ -240,7 +254,8 @@ def get_dump_engine(echo=False):
         else:
             print(statement)
 
-    sql_connection = Config().get(DATABASE_SECTION, "default")
+    database_section = _get_database_section()
+    sql_connection = __SESSION_CONFIG.get(database_section, "default") if __SESSION_CONFIG else None
 
     engine = create_engine(sql_connection, echo=echo, strategy="mock", executor=dump)
     return engine
@@ -344,7 +359,8 @@ def read_session(function: "Callable[P, R]"):
     def new_funct(*args: "P.args", session: "Optional[Session]" = None, **kwargs):  # pylint:disable=missing-kwoa
         if isgeneratorfunction(function):
             raise QuantnetException(
-                'read_session decorator should not be used with generator. Use stream_session instead.')
+                "read_session decorator should not be used with generator. Use stream_session instead."
+            )
 
         if not session:
             session_scoped = get_session()
@@ -385,7 +401,8 @@ def stream_session(function: "Callable[P, R]"):
     def new_funct(*args: "P.args", session: "Optional[Session]" = None, **kwargs):  # pylint:disable=missing-kwoa
         if not isgeneratorfunction(function):
             raise QuantnetException(
-                'stream_session decorator should be used only with generator. Use read_session instead.')
+                "stream_session decorator should be used only with generator. Use read_session instead."
+            )
 
         if not session:
             session_scoped = get_session()

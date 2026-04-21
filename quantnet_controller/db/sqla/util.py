@@ -14,16 +14,15 @@ from sqlalchemy.schema import (
 )
 from sqlalchemy.sql.ddl import DropSchema
 
-from quantnet_controller.common.config import Config
-from quantnet_controller.db.sqla import models
-from quantnet_controller.db.sqla.session import get_engine, get_dump_engine
+from quantnet_controller.db.sqla.session import get_engine, get_dump_engine, get_session_config
 
 
 def build_database():
     """Applies the schema to the database. Run this command once to build the database."""
     engine = get_engine()
 
-    schema = Config().get("database", "schema")
+    config = get_session_config()
+    schema = config.get("database", "schema") if config else None
     if schema:
         print("Schema set in config, trying to create schema:", schema)
         try:
@@ -84,7 +83,8 @@ def drop_everything():
                     drop_constraint_stmt = DropConstraint(fk_constraint)
                     conn.execute(drop_constraint_stmt)
 
-        schema = Config().get("database", "schema")
+        config = get_session_config()
+        schema = config.get("database", "schema") if config else None
         if schema:
             conn.execute(DropSchema(schema, cascade=True))
 

@@ -16,7 +16,6 @@ from uuid import uuid4 as uuid
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse, urlencode, quote, parse_qsl, urlunparse
 
-from quantnet_controller.common.config import Config
 from quantnet_controller.common.extra import import_extras
 
 EXTRA_MODULES = import_extras(["paramiko"])
@@ -307,7 +306,7 @@ def run_cmd_process(cmd, timeout=3600):
     return returncode, stdout
 
 
-def setup_logger(module_name=None, logger_name=None, logger_level=None, verbose=False):
+def setup_logger(config=None, module_name=None, logger_name=None, logger_level=None, verbose=False):
     """
     Factory method to set logger with handlers.
     :param module_name: __name__ of the module that is calling this method
@@ -318,7 +317,9 @@ def setup_logger(module_name=None, logger_name=None, logger_level=None, verbose=
 
     # helper method for cfg check
     def _force_cfg_log_level(cfg_option):
-        cfg_forced_modules = Config().get(
+        if not config:
+            return False
+        cfg_forced_modules = config.get(
             "logging", cfg_option, raise_exception=False, default=None, clean_cached=True, check_config_table=False
         )
         if cfg_forced_modules:
