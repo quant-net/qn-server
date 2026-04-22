@@ -3,6 +3,9 @@
 import sys
 import click
 import asyncio
+import logging
+
+log = logging.getLogger(__name__)
 
 from quantnet_controller.common.logging import setup_logging
 from quantnet_controller.server import QuantnetServer as Quantnet
@@ -79,9 +82,7 @@ def run(config_file, mq_broker_host, mq_broker_port, mq_mongo_host, mq_mongo_por
     )
 
     if not config.config_file:
-        import logging
-
-        logging.getLogger(__name__).warning(
+        log.warning(
             "No configuration file found, continuing with defaults.\n"
             "\tThe quant-net server looks in the following directories for a configuration file, in order:\n"
             "\t(1) --config CLI argument\n"
@@ -90,12 +91,14 @@ def run(config_file, mq_broker_host, mq_broker_port, mq_mongo_host, mq_mongo_por
         )
 
     setup_logging(config)
+    if config.config_file:
+        log.info(f"Loaded configuration from {config.config_file}")
     init_broker_config(config)
     init_session_config(config)
 
     db_broker = DB().get_broker()
     if isinstance(db_broker, SqlaBroker):
-        print("Error: SQLAlchemy DB broker is not supported. Please use MongoDB.")
+        log.error("SQLAlchemy DB broker is not supported. Please use MongoDB.")
         sys.exit(STARTUP_FAILURE)
 
     # Create and start the controller

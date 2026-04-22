@@ -15,6 +15,7 @@ def find_config_file(cli_config_file=None):
     if cli_config_file:
         if not os.path.exists(cli_config_file):
             import sys
+
             print(f"Error: Specified configuration file '{cli_config_file}' does not exist.", file=sys.stderr)
             sys.exit(3)
         return cli_config_file
@@ -30,9 +31,6 @@ def find_config_file(cli_config_file=None):
             return path
 
 
-_CACHED_PARSER = None
-
-
 class Config:
     def __init__(
         self,
@@ -45,18 +43,11 @@ class Config:
         schema_path: str = None,
         config_path: str = None,
     ):
-        global _CACHED_PARSER
         self.config_file = find_config_file(config_file)
 
-        if _CACHED_PARSER is None or config_file:
-            self._parser = ConfigParser.ConfigParser(os.environ)
-            if self.config_file and self._parser.read(self.config_file) == [self.config_file]:
-                log.info(f"Loaded configuration from {self.config_file}")
-
-            if _CACHED_PARSER is None or self.config_file:
-                _CACHED_PARSER = self._parser
-        else:
-            self._parser = _CACHED_PARSER
+        self._parser = ConfigParser.ConfigParser(os.environ)
+        if self.config_file:
+            self._parser.read(self.config_file)
 
         self.mq_broker_host = self._resolve(mq_broker_host, "mq", "host", "127.0.0.1")
         self.mq_broker_port = self._resolve(mq_broker_port, "mq", "port", "1883")
