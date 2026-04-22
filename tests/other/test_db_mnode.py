@@ -6,12 +6,12 @@ import unittest
 # import asyncio
 import json
 import quantnet_mq.schema
-from quantnet_controller.common.config import config_get
+from quantnet_controller.common.config import global_config
 from quantnet_controller.common.utils import generate_uuid
 from quantnet_controller.db.sqla.mnode import add_mnode, mnode_exists, get_mnode, list_mnodes  # del_mnode
 # from quantnet_controller.db.sqla.constants import NodeStatus, NodeType
 
-use_sqla = True if "sql" in config_get("database", "default") else False
+use_sqla = True if "sql" in global_config.get("database", "default", default="") else False
 
 NODE_PATH = os.path.normpath(
     os.path.join(quantnet_mq.schema.__path__[0],

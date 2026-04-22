@@ -85,3 +85,10 @@ class Config:
 
     def get(self, section, option, default=None, **kwargs):
         return self._resolve(None, section, option, default)
+
+    def set(self, section, option, value):
+        if not self._parser.has_section(section):
+            self._parser.add_section(section)
+        self._parser.set(section, option, str(value))
+
+global_config = Config()
