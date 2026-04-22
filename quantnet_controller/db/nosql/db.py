@@ -4,7 +4,6 @@ import importlib
 import sys
 
 from bson.objectid import ObjectId
-from quantnet_controller.common.config import config_get
 from quantnet_controller.common.utils import get_uri_path
 
 
@@ -108,9 +107,10 @@ class DBLayer(object):
 
 
 class DBLoader:
-    def __init__(self, engine="pymongo.MongoClient", **kwargs):
+    def __init__(self, config=None, engine="pymongo.MongoClient", **kwargs):
         self.log = logging.getLogger(__name__)
         self._engine = engine
+        self._config = config
         self._softstart = kwargs.get("softstart")
         self._pollrate = kwargs.get("pollrate")
         self._host = kwargs.get("host")
@@ -131,9 +131,9 @@ class DBLoader:
             exit(-1)
         while True:
             try:
-                url = config_get('database', 'default',
+                url = self._config.get('database', 'default',
                                  default="mongodb://localhost",
-                                 check_config_table=False)
+                                 check_config_table=False) if self._config else "mongodb://localhost"
                 path = get_uri_path(url)
                 self._dbname = path if path else self._dbname
                 self._conn = Client(url)

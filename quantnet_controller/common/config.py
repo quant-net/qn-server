@@ -1,7 +1,3 @@
-"""
-Get the confiugration file from /opt/quantnet/etc/quantnet.cfg
-"""
-
 import os
 import logging
 from datetime import timedelta
@@ -15,110 +11,77 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 
-def config_get(section, option, raise_exception=True, default=None, check_config_table=True):
-    """
-        Return the string value for a given option in a section
+def find_config_file(cli_config_file=None):
+    if cli_config_file:
+        if not os.path.exists(cli_config_file):
+            import sys
 
-        :param section: the named section.
-        :param option: the named option.
-        :param raise_exception: Boolean to raise or not NoOptionError or NoSectionError.
-        :param default: the default value if not found.
-        :param check_config_table: if not set, avoid looking at config table
-    .
-        :returns: the configuration value.
-    """
-    try:
-        return __CONFIG.get(section, option)
-    except (ConfigParser.NoOptionError, ConfigParser.NoSectionError) as err:
-        if raise_exception and default is None:
-            raise err
-        return default
+            print(f"Error: Specified configuration file '{cli_config_file}' does not exist.", file=sys.stderr)
+            sys.exit(3)
+        return cli_config_file
 
+    paths = []
+    if "QUANTNET_HOME" in os.environ:
+        paths.append(os.path.join(os.environ["QUANTNET_HOME"], "etc", "quantnet.cfg"))
 
-def config_set(section, option, value, raise_exception=True):
-    try:
-        return __CONFIG.set(section, option, value)
-    except ConfigParser.NoSectionError:
-        __CONFIG.add_section(section)
-        return __CONFIG.set(section, option, value)
+    paths.append("/opt/quantnet/etc/quantnet.cfg")
 
-
-__CONFIG = ConfigParser.ConfigParser(os.environ)
-
-__CONFIGFILES = list()
-for i in ["QUANTNET_HOME", "VIRTUAL_ENV"]:
-    if i in os.environ:
-        __CONFIGFILES.append(f"{os.environ[i]}/config/quantnet.cfg")
-__CONFIGFILES.append("/opt/quantnet/etc/quantnet.cfg")
-
-__HAS_CONFIG = False
-for configfile in __CONFIGFILES:
-    __HAS_CONFIG = __CONFIG.read(configfile) == [configfile]
-    if __HAS_CONFIG:
-        break
-
-if not __HAS_CONFIG:
-    log.warning(
-        "No configuration file found, continuing with defaults"
-        "\n\tThe quant-net server looks in the following directories for a configuration file, in order:"
-        "\n\t${QUANTNET_HOME}/etc/quantnet.cfg"
-        "\n\t/opt/quantnet/etc/quantnet.cfg"
-        "\n\t${VIRTUAL_ENV}/etc/quantnet.cfg"
-    )
+    for path in paths:
+        if os.path.exists(path):
+            return path
 
 
 class Config:
     def __init__(
         self,
+        config_file: str = None,
         mq_broker_host: str = None,
         mq_broker_port: int = None,
         mq_mongo_host: str = None,
         mq_mongo_port: int = None,
         plugin_path: str = None,
         schema_path: str = None,
-        config_path: str = None
+        config_path: str = None,
     ):
-        if mq_broker_host:
-            self.mq_broker_host = mq_broker_host
-        else:
-            self.mq_broker_host = config_get("mq", "host", default="127.0.0.1")
-        if mq_broker_port:
-            self.mq_broker_port = mq_broker_port
-        else:
-            self.mq_broker_port = config_get("mq", "port", default="1883")
-        if mq_mongo_host:
-            self.mq_mongo_host = mq_mongo_host
-        else:
-            self.mq_mongo_host = config_get("mq", "mongo_host", default="127.0.0.1")
-        if mq_mongo_port:
-            self.mq_mongo_port = mq_mongo_port
-        else:
-            self.mq_mongo_port = config_get("mq", "mongo_port", default="27017")
+        self.config_file = find_config_file(config_file)
 
-        self.rpc_server_topic = config_get("mq", "rpc_server_topic", default="rpc/qn-server")
-        self.rpc_client_topic = config_get("mq", "rpc_client_topic", default="rpc")
-        self.rpc_client_name = config_get("mq", "rpc_client_name",
-                                          default=f"qn-server-{Constants.INSTANCE_UUID}")
-        self.exp_def_path = config_get("experiment_definition", "path",
-                                       default=Constants.DEFAULT_EXP_DEFS)
-        self.schmanager_grace_period = timedelta(
-                milliseconds=int(config_get("schedule_manager", "grace_period", default=50))
-            )
-        self.scheduler = config_get("scheduling", "name", default=Constants.DEFAULT_SCHEDULER)
-        self.router = config_get("routing", "name", default=Constants.DEFAULT_ROUTER)
-        self.monitor = config_get("monitoring", "name", default=Constants.DEFAULT_MONITOR)
+        self._parser = ConfigParser.ConfigParser(os.environ)
+        if self.config_file:
+            self._parser.read(self.config_file)
+
+        self.mq_broker_host = self._resolve(mq_broker_host, "mq", "host", "127.0.0.1")
+        self.mq_broker_port = self._resolve(mq_broker_port, "mq", "port", "1883")
+        self.mq_mongo_host = self._resolve(mq_mongo_host, "mq", "mongo_host", "127.0.0.1")
+        self.mq_mongo_port = self._resolve(mq_mongo_port, "mq", "mongo_port", "27017")
+
+        self.rpc_server_topic = self._resolve(None, "mq", "rpc_server_topic", "rpc/qn-server")
+        self.rpc_client_topic = self._resolve(None, "mq", "rpc_client_topic", "rpc")
+        self.rpc_client_name = self._resolve(None, "mq", "rpc_client_name", f"qn-server-{Constants.INSTANCE_UUID}")
+
+        self.exp_def_path = self._resolve(None, "experiment_definition", "path", Constants.DEFAULT_EXP_DEFS)
+
+        grace_ms = self._resolve(None, "schedule_manager", "grace_period", 50)
+        self.schmanager_grace_period = timedelta(milliseconds=int(grace_ms))
+
+        self.scheduler = self._resolve(None, "scheduling", "name", Constants.DEFAULT_SCHEDULER)
+        self.router = self._resolve(None, "routing", "name", Constants.DEFAULT_ROUTER)
+        self.monitor = self._resolve(None, "monitoring", "name", Constants.DEFAULT_MONITOR)
 
         if plugin_path:
             self.plugin_path = [Constants.PLUGIN_PATH, plugin_path]
         else:
-            try:
-                self.plugin_path = [Constants.PLUGIN_PATH, config_get("plugins", "path")]
-            except Exception:
-                self.plugin_path = [Constants.PLUGIN_PATH]
-        if schema_path:
-            self.schema_path = schema_path
-        else:
-            try:
-                self.schema_path = config_get("schemas", "path")
-            except Exception:
-                self.schema_path = None
+            cfg_plugin = self._resolve(None, "plugins", "path", None)
+            self.plugin_path = [Constants.PLUGIN_PATH, cfg_plugin] if cfg_plugin else [Constants.PLUGIN_PATH]
+
+        self.schema_path = schema_path if schema_path else self._resolve(None, "schemas", "path", None)
+
+    def _resolve(self, cli_val, section, option, default):
+        if cli_val is not None:
+            return cli_val
+        try:
+            return self._parser.get(section, option)
+        except (ConfigParser.NoOptionError, ConfigParser.NoSectionError):
+            return default
+
+    def get(self, section, option, default=None, **kwargs):
+        return self._resolve(None, section, option, default)
