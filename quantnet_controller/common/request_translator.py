@@ -314,7 +314,7 @@ class RequestTranslator:
 
         try:
             # Get experiment parameters - could come from params or payload_data
-            exp_params = parameters.get("exp_params", [])
+            exp_params = parameters.get("exp_params", {})
             # if "payload_data" in parameters:
             #     # Merge payload data if needed
             #     exp_params = {**exp_params, **parameters["payload_data"]}
