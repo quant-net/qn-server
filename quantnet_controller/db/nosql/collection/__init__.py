@@ -4,6 +4,12 @@ from quantnet_controller.db.nosql.db import DBLoader
 DATABASE_SECTION = 'database'
 
 _DATABASE = None
+_COLLECTION_CONFIG = None
+
+
+def init_collection_config(config):
+    global _COLLECTION_CONFIG
+    _COLLECTION_CONFIG = config
 
 
 class Collection:
@@ -24,11 +30,9 @@ class Collection:
         def wrapper(self, *args, **kwargs):
             key = Collection._keyname
             global _DATABASE
-            if _DATABASE:
-                layer = _DATABASE.get_db_layer(self._collection_name, key)
-            else:
-                _DATABASE = DBLoader(**kwargs)
-                layer = _DATABASE.get_db_layer(self._collection_name, key)
+            if _DATABASE is None:
+                _DATABASE = DBLoader(config=_COLLECTION_CONFIG)
+            layer = _DATABASE.get_db_layer(self._collection_name, key)
             return func(self, *args, **kwargs, layer=layer)
         return wrapper
 

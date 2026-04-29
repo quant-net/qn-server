@@ -82,6 +82,7 @@ celerybeat-schedule
 
 # dotenv
 .env
+secret.env
 
 # virtualenv
 .venv
@@ -118,3 +119,4 @@ tests/example.html
 
 *.npz
 histograms/*
+.actrc

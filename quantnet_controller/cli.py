@@ -13,6 +13,7 @@ from quantnet_controller.common.config import Config
 from quantnet_controller.core.abstractdatabase import AbstractDatabase as DB
 from quantnet_controller.db.broker import SqlaBroker, init_broker_config
 from quantnet_controller.db.sqla.session import init_session_config
+from quantnet_controller.db.nosql.collection import init_collection_config
 
 STARTUP_FAILURE = 3
 
@@ -95,6 +96,7 @@ def run(config_file, mq_broker_host, mq_broker_port, mq_mongo_host, mq_mongo_por
         log.info(f"Loaded configuration from {config.config_file}")
     init_broker_config(config)
     init_session_config(config)
+    init_collection_config(config)
 
     db_broker = DB().get_broker()
     if isinstance(db_broker, SqlaBroker):
