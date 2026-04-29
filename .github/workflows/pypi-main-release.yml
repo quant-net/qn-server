@@ -1,0 +1,84 @@
+# .github/workflows/pypi-publish.yml
+
+name: PyPI-main-manual
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-publish:
+    name: Build and Publish to PyPI
+    runs-on: ubuntu-latest
+    # NOTE: The 'permissions' and 'environment' keys have been removed
+    # as they are only needed for trusted publishing, not for API token auth.
+
+    steps:
+      - name: Checkout repository code
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install --upgrade build
+
+      - name: Build package distributions
+        run: python -m build
+
+      - name: Publish package to PyPI using token
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          # This uses the API token you have stored in GitHub secrets.
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          # This new option will prevent the workflow from failing if you
+          # try to publish a version that already exists on PyPI.
+          skip_existing: true
+
+  test-install:
+    name: Test Installation from PyPI
+    # This job will only run after the 'build-and-publish' job completes successfully
+    needs: build-and-publish
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository code
+        # We need the code to read the version number
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Create and activate a virtual environment
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+
+      - name: Read package version from source code
+        id: get_version
+        run: |
+          # This command extracts the __version__ from your code
+          # and makes it available to subsequent steps.
+          VERSION=$(python -c "from quantnet_controller import __version__; print(__version__)")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install package from PyPI
+        # This gives PyPI a few seconds to update its index before we try to install
+        run: |
+          echo "Waiting 15 seconds for PyPI index to update..."
+          sleep 15
+          pip install "quantnet-server==${{ steps.get_version.outputs.version }}"
+          echo "Successfully installed quantnet-server version ${{ steps.get_version.outputs.version }}"
+
+      - name: Verify package installation and CLI entrypoint
+        run: |
+          echo "Verifying installation..."
+          pip show quantnet-server
+          

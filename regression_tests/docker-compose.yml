@@ -1,6 +1,6 @@
 services:
   controller:
-    image: ghcr.io/quant-net/quant-net-server:develop
+    image: ghcr.io/quant-net/qn-server:develop
     restart: always
     networks:
       - qnet-backend
@@ -39,17 +39,18 @@ services:
       - mosquitto
 
   agent-1:
-    image: ghcr.io/quant-net/quant-net-agent:develop
+    image: ghcr.io/quant-net/qn-agent:develop
     restart: always
     networks:
       - qnet-backend
-    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "LBNL-Q", "-n", "/quantnet_mq/quantnet_mq/schema/examples/topology/conf_lbnl-q.json"]
+    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "LBNL-Q", "-n", "/qn-mq/quantnet_mq/schema/examples/topology/conf_lbnl-q.json"]
     environment:
       - QUANTNET_ENTRYPOINT_DELAY=15
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
       - ./conf/schema:/quant-net-plugins/schema
+      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -59,17 +60,18 @@ services:
       - mosquitto
 
   agent-2:
-    image: ghcr.io/quant-net/quant-net-agent:develop
+    image: ghcr.io/quant-net/qn-agent:develop
     restart: always
     networks:
       - qnet-backend
-    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "UCB-Q", "-n", "/quantnet_mq/quantnet_mq/schema/examples/topology/conf_ucb-q.json"]
+    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "UCB-Q", "-n", "/qn-mq/quantnet_mq/schema/examples/topology/conf_ucb-q.json"]
     environment:
       - QUANTNET_ENTRYPOINT_DELAY=15
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
       - ./conf/schema:/quant-net-plugins/schema
+      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -79,17 +81,18 @@ services:
       - mosquitto
 
   agent-3:
-    image: ghcr.io/quant-net/quant-net-agent:develop
+    image: ghcr.io/quant-net/qn-agent:develop
     restart: always
     networks:
       - qnet-backend
-    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "LBNL-SWITCH", "-n", "/quantnet_mq/quantnet_mq/schema/examples/topology/conf_lbnl-switch.json"]
+    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "LBNL-SWITCH", "-n", "/qn-mq/quantnet_mq/schema/examples/topology/conf_lbnl-switch.json"]
     environment:
       - QUANTNET_ENTRYPOINT_DELAY=15
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
       - ./conf/schema:/quant-net-plugins/schema
+      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -99,17 +102,18 @@ services:
       - mosquitto
 
   agent-4:
-    image: ghcr.io/quant-net/quant-net-agent:develop
+    image: ghcr.io/quant-net/qn-agent:develop
     restart: always
     networks:
       - qnet-backend
-    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "UCB-SWITCH", "-n", "/quantnet_mq/quantnet_mq/schema/examples/topology/conf_ucb-switch.json"]
+    command: ["quantnet_agent", "--mq-broker-host", "mosquitto", "-a", "UCB-SWITCH", "-n", "/qn-mq/quantnet_mq/schema/examples/topology/conf_ucb-switch.json"]
     environment:
       - QUANTNET_ENTRYPOINT_DELAY=15
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
       - ./conf/schema:/quant-net-plugins/schema
+      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
