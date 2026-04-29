@@ -10,7 +10,6 @@ services:
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
-      - ./conf/schema:/quant-net-plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -21,7 +20,7 @@ services:
       - mongo
 
   portal:
-    image: ghcr.io/quant-net/quant-net-api:develop
+    image: ghcr.io/quant-net/qn-api:develop
     restart: always
     networks:
       - qnet-backend
@@ -34,7 +33,6 @@ services:
       - QUANTNET_HOME=/quant-net-api
     volumes:
       - ./conf/:/opt/quantnet/etc/
-      - ./conf/schema:/quant-net-plugins/schema
     depends_on:
       - mosquitto
 
@@ -49,8 +47,6 @@ services:
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
-      - ./conf/schema:/quant-net-plugins/schema
-      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -70,8 +66,6 @@ services:
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
-      - ./conf/schema:/quant-net-plugins/schema
-      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -91,8 +85,6 @@ services:
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
-      - ./conf/schema:/quant-net-plugins/schema
-      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -112,8 +104,6 @@ services:
       - QUANTNET_HOME=/opt/quantnet
     volumes:
       - ./conf/:/opt/quantnet/etc/
-      - ./conf/schema:/quant-net-plugins/schema
-      - ./conf/schema:/quant-net-plugins/plugins/schema
     logging:
       driver: "json-file"
       options:
@@ -127,27 +117,17 @@ services:
     restart: always
     networks:
       - qnet-backend
-    expose:
-      - 27017
-    ports:
-      - "27017:27017"
 
   mosquitto:
     image: eclipse-mosquitto:latest
     hostname: mosquitto
     restart: always
-    ports:
-      - "1883:1883"
-      - "9001:9001"
-      - "8080:8080"
     networks:
       - qnet-backend
+    ports:
+      - "1883:1883"
     volumes:
       - ./conf/:/mosquitto/config/
-    expose:
-      - 1883
-      - 9001
-      - 8080
 
 networks:
   qnet-frontend:
