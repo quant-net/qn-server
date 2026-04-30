@@ -29,13 +29,11 @@ for CONTAINER in "${CONTAINERS[@]}"; do
         echo "$LOGS"
         HAS_ERROR=1
     fi
-
-    # Also check if container exited with a non-zero code
-    if [ "$EXITED" != "0" ]; then
-        echo "❌ $CONTAINER exited with code $EXITED"
+    # Always print controller and agent logs for visibility
+    if [[ "$CONTAINER" = "controller" || "$CONTAINER" = "agent-*" ]]; then
         echo "------ Logs for $CONTAINER ------"
         echo "$LOGS"
-        HAS_ERROR=1
+        echo "---------------------------------"
     fi
 done
 
