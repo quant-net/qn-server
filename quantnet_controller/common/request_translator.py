@@ -12,6 +12,7 @@ from quantnet_controller.common.experimentdefinitions import Experiment, get_num
 from quantnet_controller.common.constants import Constants
 from quantnet_controller.common.plugin import Path
 from quantnet_mq import Code
+from quantnet_mq.schema.models import Parameter
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +314,7 @@ class RequestTranslator:
 
         try:
             # Get experiment parameters - could come from params or payload_data
-            exp_params = parameters.get("params", [])
+            exp_params = parameters.get("exp_params", {})
             # if "payload_data" in parameters:
             #     # Merge payload data if needed
             #     exp_params = {**exp_params, **parameters["payload_data"]}
@@ -418,12 +419,15 @@ class RequestTranslator:
         :returns: ``0`` on success, non‑zero error code on failure.
         :rtype: int
         """
+
         logger.info(f"translating request: {exp_id}")
+        rpc_exp_params = []
+        for k, v in exp_params.items():
+            rpc_exp_params.append(Parameter(name=k, value=v))
 
         try:
             start_time, timeslots = await self.get_slots_to_allocate(agent_ids, exp)
             submit_tasks = []
-            getResult_tasks = []
 
             for idx in range(len(exp.agent_sequences)):
                 agent_sequence = exp.agent_sequences[idx]
@@ -437,7 +441,7 @@ class RequestTranslator:
                     allocation = {
                         "expName": sequence.name,
                         "className": sequence.class_name,
-                        "parameters": exp_params,
+                        "parameters": rpc_exp_params,
                         "timeSlot": timeslot_mask[:timeslot],
                     }
                     timeslot_mask = timeslot_mask[timeslot:]
@@ -453,21 +457,30 @@ class RequestTranslator:
                     "allocations": allocations,
                 }
                 submit_tasks.append(self.submit(agent_id, schedule_params))
-                getResult_tasks.append(self.getResult(agent_id, {"expid": exp_id}))
 
             submit_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
-            for result in submit_results:
+            for idx, result in enumerate(submit_results):
                 if isinstance(result, Exception):
-                    raise Exception("Failed to allocate task to agents")
+                    raise Exception(f"Failed to allocate task to agent {agent_ids[idx]}: {result}")
                 if result["status"]["code"] != Code.OK.value:
-                    raise Exception("Failed to allocate task to agents")
+                    raise Exception(
+                        f"Failed to allocate task to agent {agent_ids[idx]}: "
+                        f"status {result['status']['code']}"
+                    )
 
+            getResult_tasks = [
+                self.getResult(agent_id, {"expid": exp_id})
+                for agent_id in agent_ids
+            ]
             agent_results = await asyncio.gather(*getResult_tasks, return_exceptions=True)
-            for result in agent_results:
+            for idx, result in enumerate(agent_results):
                 if isinstance(result, Exception):
-                    raise Exception("Failed to get result")
+                    raise Exception(f"Failed to get result from agent {agent_ids[idx]}: {result}")
                 if result["status"]["code"] not in [Code.OK.value, Code.QUEUED.value]:
-                    raise Exception("Failed to get result")
+                    raise Exception(
+                        f"Failed to get result from agent {agent_ids[idx]}: "
+                        f"status {result['status']['code']}"
+                    )
 
             # Store results directly without nesting - each agent's result is stored by agent_id
             if handle_result:
@@ -480,7 +493,7 @@ class RequestTranslator:
             logger.info(f"Experiment completed with results from {len(agent_results)} agents")
             return Code.OK
         except Exception as e:
-            logger.error(f"Failed to handle timeslot allocation: {e.args[0]}")
+            logger.error(f"Failed to handle timeslot allocation: {e}")
             if handle_result:
                 handle_result("error", str(e))
             return Code.FAILED
