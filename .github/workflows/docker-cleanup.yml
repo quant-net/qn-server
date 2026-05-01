@@ -1,0 +1,24 @@
+name: Docker-Cleanup
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Every Sunday at midnight
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  delete-old-images:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete old container versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'qn-server'
+          package-type: 'container'
+          min-versions-to-keep: 10
+          delete-older-than: 60 # 60 days (~2 months)
+          # Ignore rolling tags, release versions, and the new timestamped develop tags
+          ignore-versions: '^(latest|develop|develop-\d{8}|release|v?\d+\.\d+\.\d+|v?\d+\.\d+|v?\d+)$'
+          token: ${{ secrets.GHCR_TOKEN }}
