@@ -13,12 +13,16 @@ jobs:
 
     steps:
       - name: Delete old container versions
-        uses: actions/delete-package-versions@v5
+        uses: dataaxiom/ghcr-cleanup-action@v1.0.16
         with:
-          package-name: 'qn-server'
-          package-type: 'container'
-          min-versions-to-keep: 10
-          delete-older-than: 60 # 60 days (~2 months)
-          # Ignore rolling tags, release versions, and the new timestamped develop tags
-          ignore-versions: '^(latest|develop|develop-\d{8}|release|v?\d+\.\d+\.\d+|v?\d+\.\d+|v?\d+)$'
           token: ${{ secrets.GHCR_TOKEN }}
+          package: 'qn-server'
+          # Use age-based deletion (60 days = ~2 months)
+          older-than: '60 days'
+          # Keep at least 10 versions as a safety floor
+          keep-n-tagged: 10
+          # Delete all untagged images
+          delete-untagged: true
+          # Ignore rolling tags, release versions, and timestamped develop tags
+          use-regex: true
+          exclude-tags: '^(latest|develop|develop-\d{8}|release|v?\d+\.\d+\.\d+|v?\d+\.\d+|v?\d+)$'
