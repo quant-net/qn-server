@@ -1,0 +1,28 @@
+name: Docker-Cleanup
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Every Sunday at midnight
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  delete-old-images:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+
+    steps:
+      - name: Delete old container versions
+        uses: dataaxiom/ghcr-cleanup-action@v1.0.16
+        with:
+          token: ${{ secrets.GHCR_TOKEN }}
+          package: 'qn-server'
+          # Use age-based deletion (60 days = ~2 months)
+          older-than: '60 days'
+          # Keep at least 10 versions as a safety floor
+          keep-n-tagged: 10
+          # Delete all untagged images
+          delete-untagged: true
+          # Ignore rolling tags, release versions, and timestamped develop tags
+          use-regex: true
+          exclude-tags: '^(latest|develop|develop-\d{8}|release|v?\d+\.\d+\.\d+|v?\d+\.\d+|v?\d+)$'

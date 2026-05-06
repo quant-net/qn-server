@@ -352,6 +352,7 @@ class Channel(BASE, ModelBase):
     direction = Column(String(255))
     wavelength = Column(Sqla_JSON)
     power = Column(Float)
+    length = Column(Sqla_JSON)
     neighbor = relationship('Neighbor', back_populates='channel')
 
     qnode_id = Column(GUID())

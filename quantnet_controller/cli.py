@@ -1,13 +1,19 @@
 """Console script for quantnet_controller."""
+
 import sys
 import click
 import asyncio
+import logging
+
+log = logging.getLogger(__name__)
 
 from quantnet_controller.common.logging import setup_logging
 from quantnet_controller.server import QuantnetServer as Quantnet
 from quantnet_controller.common.config import Config
 from quantnet_controller.core.abstractdatabase import AbstractDatabase as DB
-from quantnet_controller.db.broker import SqlaBroker
+from quantnet_controller.db.broker import SqlaBroker, init_broker_config
+from quantnet_controller.db.sqla.session import init_session_config
+from quantnet_controller.db.nosql.collection import init_collection_config
 
 STARTUP_FAILURE = 3
 
@@ -48,60 +54,53 @@ def ask_exit(*args):
     show_default=True,
 )
 @click.option(
-    "--plugin-path",
-    "plugin_path",
-    type=str,
-    help="Specify a path containing controller plugins",
-    show_default=True
+    "--plugin-path", "plugin_path", type=str, help="Specify a path containing controller plugins", show_default=True
 )
 @click.option(
     "--schema-path",
     "schema_path",
     type=str,
     help="Specify a path containing additional schema files",
-    show_default=True
+    show_default=True,
 )
-def main(
-    mq_broker_host,
-    mq_broker_port,
-    mq_mongo_host,
-    mq_mongo_port,
-    plugin_path,
-    schema_path
-) -> None:
-    run(
-        mq_broker_host,
-        mq_broker_port,
-        mq_mongo_host,
-        mq_mongo_port,
-        plugin_path,
-        schema_path
-    )
+@click.option(
+    "-c", "--config", "config_file", type=str, default=None, help="Specify a configuration file", show_default=True
+)
+def main(config_file, mq_broker_host, mq_broker_port, mq_mongo_host, mq_mongo_port, plugin_path, schema_path) -> None:
+    run(config_file, mq_broker_host, mq_broker_port, mq_mongo_host, mq_mongo_port, plugin_path, schema_path)
 
 
-def run(
-    mq_broker_host,
-    mq_broker_port,
-    mq_mongo_host,
-    mq_mongo_port,
-    plugin_path,
-    schema_path
-) -> None:
+def run(config_file, mq_broker_host, mq_broker_port, mq_mongo_host, mq_mongo_port, plugin_path, schema_path) -> None:
     # Create config
     config = Config(
+        config_file=config_file,
         mq_broker_host=mq_broker_host,
         mq_broker_port=mq_broker_port,
         mq_mongo_host=mq_mongo_host,
         mq_mongo_port=mq_mongo_port,
         plugin_path=plugin_path,
-        schema_path=schema_path
+        schema_path=schema_path,
     )
 
-    setup_logging()
+    if not config.config_file:
+        log.warning(
+            "No configuration file found, continuing with defaults.\n"
+            "\tThe quant-net server looks in the following directories for a configuration file, in order:\n"
+            "\t(1) --config CLI argument\n"
+            "\t(2) $QUANTNET_HOME/etc/quantnet.cfg\n"
+            "\t(3) /opt/quantnet/etc/quantnet.cfg"
+        )
+
+    setup_logging(config)
+    if config.config_file:
+        log.info(f"Loaded configuration from {config.config_file}")
+    init_broker_config(config)
+    init_session_config(config)
+    init_collection_config(config)
 
     db_broker = DB().get_broker()
     if isinstance(db_broker, SqlaBroker):
-        print("Error: SQLAlchemy DB broker is not supported. Please use MongoDB.")
+        log.error("SQLAlchemy DB broker is not supported. Please use MongoDB.")
         sys.exit(STARTUP_FAILURE)
 
     # Create and start the controller

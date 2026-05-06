@@ -5,7 +5,7 @@ import logging
 import json
 import quantnet_mq.schema
 from quantnet_controller.common.constants import Constants
-from quantnet_controller.common.config import config_get, config_set
+from quantnet_controller.common.config import global_config
 from quantnet_controller.common.utils import replace_resource_uri
 from quantnet_controller.core import AbstractDatabase, DBmodel
 
@@ -29,11 +29,11 @@ class QuantnetTest():
                               "conf_lbnl-bsm.json"]
 
         try:
-            dburi = config_get("database", "default")
+            dburi = global_config.get("database", "default")
             dburi = replace_resource_uri(dburi, Constants.DEFAULT_TEST_DB_NAME)
-            config_set("database", "default", dburi)
+            global_config.set("database", "default", dburi)
         except Exception:
-            config_set("database", "default", self._test_dburi)
+            global_config.set("database", "default", self._test_dburi)
 
         self._db = AbstractDatabase()
         self._db.drop_database()

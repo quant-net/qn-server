@@ -2,20 +2,21 @@ name: CICD-test-develop-nightly
 
 on:
   schedule:
-   - cron: '30 9 * * *'  # Every day at midnight UTC
-  workflow_dispatch:     # Manual trigger
+    - cron: "30 9 * * *" # Every day at midnight UTC
+  workflow_dispatch:
+    # Manual trigger
 
 env:
   # Use docker.io for Docker Hub if empty
   REGISTRY: ghcr.io
-  
+
   # github.repository as <account>/<repo>
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20   #  Limit total job runtime to 4 minutes
+    timeout-minutes: 20 #  Limit total job runtime to 4 minutes
 
     permissions:
       contents: read
@@ -28,15 +29,15 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Clone qn-plugins repository
-        run: |
-          git clone --single-branch --branch develop https://github.com/quant-net/qn-plugins.git quant-net-plugins
-          cp -r quant-net-plugins/plugins/schema ./conf/
+      # - name: Clone quant-net-plugins repository
+      #   run: |
+      #     git clone --single-branch --branch develop https://${{secrets.QN_RO_PAT}}@github.com/quant-net/quant-net-plugins.git
+      #     cp -r quant-net-plugins/plugins/schema ./conf/
 
       - name: Log into registry ${{ env.REGISTRY }}
         uses: docker/login-action@v3
@@ -44,7 +45,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
-      
+
       - name: Build Docker containers
         run: |
           docker compose -f regression_tests/docker-compose.yml build
@@ -61,13 +62,12 @@ jobs:
           sleep 30
           docker compose -f regression_tests/docker-compose.yml ps
           docker compose -f regression_tests/docker-compose.yml logs --tail=50
-    
-    
+
       - name: Install dependencies for test
         run: |
           git clone --single-branch --branch develop https://github.com/quant-net/qn-mq.git qn-mq
           cd qn-mq && pip install --no-cache-dir .
-    
+
       - name: Run integration test and save output
         run: |
           RESULTS_FILE="test-results.txt"
@@ -77,7 +77,7 @@ jobs:
           echo "Repository: ${{ github.repository }}" >> "$RESULTS_FILE"
           echo "Workflow: ${{ github.workflow }}" >> "$RESULTS_FILE"
           echo "Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" >> "$RESULTS_FILE"
-          
+
           echo "Check containers [before] running scripts: start" | tee -a "$RESULTS_FILE"
           chmod a+x ./regression_tests/scripts/check_container.sh
           ./regression_tests/scripts/check_container.sh >> "$RESULTS_FILE" 2>&1
@@ -173,7 +173,6 @@ jobs:
           echo "======================Start Cat==============================="
           cat "$RESULTS_FILE"
           echo "======================End   Cat==============================="
-        
 
       - name: Upload test results artifact
         if: always()
@@ -181,7 +180,7 @@ jobs:
         with:
           name: test-results
           path: test-results.txt
-      
+
       - name: Create Failure Report
         if: failure() # This step ONLY runs if any previous step has failed.
         run: |

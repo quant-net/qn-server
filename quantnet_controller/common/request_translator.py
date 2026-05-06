@@ -1,20 +1,113 @@
 import logging
 import json
+import time
 import asyncio
 import importlib
 import inspect
 from datetime import datetime, timezone, timedelta
 from bitarray import bitarray
+from collections import Counter
 
 from quantnet_controller.common.experimentdefinitions import Experiment, get_num_timeslot, get_timeslot_mask
 from quantnet_controller.common.constants import Constants
 from quantnet_controller.common.plugin import Path
 from quantnet_mq import Code
+from quantnet_mq.schema.models import Parameter
 
 logger = logging.getLogger(__name__)
 
 
-def match_agent_to_exp(exp_def, path):
+def _validate_agent_requirements(exp_def, available_nodes, heartbeat_timeout=None):
+    """
+    Validate that available nodes satisfy experiment requirements.
+
+    Nodes whose ``last_seen`` Unix timestamp is older than *heartbeat_timeout*
+    seconds are treated as unavailable and excluded before the type-count check.
+
+    :param exp_def: Experiment definition containing agent sequences.
+    :type exp_def: Experiment
+    :param available_nodes: List of available nodes from path.
+    :type available_nodes: list
+    :param heartbeat_timeout: Maximum age in seconds of a node heartbeat before
+        it is considered stale.  Defaults to ``Constants.NODE_HEARTBEAT_TIMEOUT``.
+    :type heartbeat_timeout: int | float | None
+
+    :returns: Tuple of (is_valid, required_types, available_types, missing_types)
+    :rtype: tuple
+
+    :raises ValueError: If validation fails with detailed message about missing agents.
+    """
+    if heartbeat_timeout is None:
+        heartbeat_timeout = Constants.NODE_HEARTBEAT_TIMEOUT
+
+    now = time.time()
+
+    # Filter out nodes that have not sent a heartbeat within the timeout
+    reachable_nodes = []
+    stale_nodes = []
+    for node in available_nodes:
+        if isinstance(node, str):
+            # String node IDs don't carry last_seen; assume reachable
+            reachable_nodes.append(node)
+            continue
+
+        last_seen = getattr(node, "last_seen", None)
+        if last_seen is None:
+            # No heartbeat recorded yet – treat as stale
+            node_id = node.systemSettings.ID if hasattr(node, "systemSettings") else str(node)
+            stale_nodes.append(node_id)
+            logger.warning(f"Node {node_id} has no last_seen timestamp, treating as unavailable")
+            continue
+
+        age = now - last_seen
+        if age > heartbeat_timeout:
+            node_id = node.systemSettings.ID
+            stale_nodes.append(node_id)
+            logger.warning(
+                f"Node {node_id} last seen {age:.1f}s ago "
+                f"(timeout={heartbeat_timeout}s), treating as unavailable"
+            )
+        else:
+            reachable_nodes.append(node)
+
+    # Extract required agent types from experiment definition
+    required_types = [x.node_type for x in exp_def.agent_sequences]
+
+    # Extract available agent types from reachable nodes only
+    available_types = [
+        x if isinstance(x, str) else x.systemSettings.type
+        for x in reachable_nodes
+    ]
+
+    # Count occurrences of each type
+    required_counts = Counter(required_types)
+    available_counts = Counter(available_types)
+
+    # Find missing agents
+    missing_types = []
+    for req_type, req_count in required_counts.items():
+        avail_count = available_counts.get(req_type, 0)
+        if avail_count < req_count:
+            missing_types.append({
+                'type': req_type,
+                'required': req_count,
+                'available': avail_count
+            })
+
+    is_valid = len(missing_types) == 0
+
+    if not is_valid:
+        error_msg = f"Agent validation failed. Missing agents: {missing_types}"
+        if stale_nodes:
+            error_msg += f" (stale nodes excluded: {stale_nodes})"
+        logger.error(error_msg)
+        raise ValueError(error_msg)
+
+    logger.debug(f"Agent validation passed. Required: {required_types}, Available: {available_types}")
+    return is_valid, required_types, available_types, missing_types
+
+
+def match_agent_to_exp(exp_def, path, validate=True):
     """
     Match agents from a given path to the requirements of an experiment definition.
 
@@ -22,28 +115,38 @@ def match_agent_to_exp(exp_def, path):
     :type exp_def: Experiment
     :param path: Path object or list of node IDs representing the route.
     :type path: Any
+    :param validate: If True, validate that all required agents are available before matching.
+    :type validate: bool
 
     :returns: List of agent identifiers that satisfy the experiment definition.
     :rtype: list
+
+    :raises ValueError: If validate=True and required agents are not available in the path.
     """
-    mapping = []
     # Handle both Path objects and lists of node IDs
     if hasattr(path, "hops"):
-        nodes = [x for x in path.hops if x.systemSettings.type != "OpticalSwitch"]
+        nodes = [x for x in path.hops if x is not None and x.systemSettings.type != "OpticalSwitch"] if path.hops else []
     else:
         # If path is already a list (from DB), reconstruct nodes
-        # This is a simplified version - you may need to fetch actual node objects
         nodes = path if isinstance(path, list) else []
 
+    # Validate requirements if requested
+    if validate:
+        _validate_agent_requirements(exp_def, nodes)
+
+    # Perform matching with non-mutating approach
+    mapping = []
+    nodes_copy = list(nodes)  # Create copy to avoid mutation
     exp_nodes = [x.node_type for x in exp_def.agent_sequences]
+    
     for node_type in exp_nodes:
-        for i in range(len(nodes)):
-            node_id = nodes[i] if isinstance(nodes[i], str) else nodes[i].systemSettings.ID
-            node_type_actual = nodes[i] if isinstance(nodes[i], str) else nodes[i].systemSettings.type
+        for i in range(len(nodes_copy)):
+            node_id = nodes_copy[i] if isinstance(nodes_copy[i], str) else nodes_copy[i].systemSettings.ID
+            node_type_actual = nodes_copy[i] if isinstance(nodes_copy[i], str) else nodes_copy[i].systemSettings.type
 
             if node_type == node_type_actual:
                 mapping.append(node_id)
-                nodes.remove(nodes[i])
+                nodes_copy.pop(i)
                 break
 
     logger.info(f"Found agents {mapping}")
@@ -189,7 +292,14 @@ class RequestTranslator:
             # Handle None or invalid data
             path = Path.from_node_ids(None)
 
-        agents = match_agent_to_exp(exp_def, path)
+        # Match agents with validation - fail fast if agents don't match
+        try:
+            agents = match_agent_to_exp(exp_def, path, validate=True)
+        except ValueError as e:
+            logger.error(f"Agent validation failed for experiment {parameters['id']}: {e}")
+            if handle_result:
+                handle_result("error", f"Invalid path for experiment: {str(e)}")
+            return Code.FAILED
 
         # Wait for all agents to be ready
         all_agents_ready = True
@@ -204,7 +314,7 @@ class RequestTranslator:
 
         try:
             # Get experiment parameters - could come from params or payload_data
-            exp_params = parameters.get("params", [])
+            exp_params = parameters.get("exp_params", {})
             # if "payload_data" in parameters:
             #     # Merge payload data if needed
             #     exp_params = {**exp_params, **parameters["payload_data"]}
@@ -309,12 +419,15 @@ class RequestTranslator:
         :returns: ``0`` on success, non‑zero error code on failure.
         :rtype: int
         """
+
         logger.info(f"translating request: {exp_id}")
+        rpc_exp_params = []
+        for k, v in exp_params.items():
+            rpc_exp_params.append(Parameter(name=k, value=v))
 
         try:
             start_time, timeslots = await self.get_slots_to_allocate(agent_ids, exp)
             submit_tasks = []
-            getResult_tasks = []
 
             for idx in range(len(exp.agent_sequences)):
                 agent_sequence = exp.agent_sequences[idx]
@@ -328,7 +441,7 @@ class RequestTranslator:
                     allocation = {
                         "expName": sequence.name,
                         "className": sequence.class_name,
-                        "parameters": exp_params,
+                        "parameters": rpc_exp_params,
                         "timeSlot": timeslot_mask[:timeslot],
                     }
                     timeslot_mask = timeslot_mask[timeslot:]
@@ -344,21 +457,30 @@ class RequestTranslator:
                     "allocations": allocations,
                 }
                 submit_tasks.append(self.submit(agent_id, schedule_params))
-                getResult_tasks.append(self.getResult(agent_id, {"expid": exp_id}))
 
             submit_results = await asyncio.gather(*submit_tasks, return_exceptions=True)
-            for result in submit_results:
+            for idx, result in enumerate(submit_results):
                 if isinstance(result, Exception):
-                    raise Exception("Failed to allocate task to agents")
+                    raise Exception(f"Failed to allocate task to agent {agent_ids[idx]}: {result}")
                 if result["status"]["code"] != Code.OK.value:
-                    raise Exception("Failed to allocate task to agents")
+                    raise Exception(
+                        f"Failed to allocate task to agent {agent_ids[idx]}: "
+                        f"status {result['status']['code']}"
+                    )
 
+            getResult_tasks = [
+                self.getResult(agent_id, {"expid": exp_id})
+                for agent_id in agent_ids
+            ]
             agent_results = await asyncio.gather(*getResult_tasks, return_exceptions=True)
-            for result in agent_results:
+            for idx, result in enumerate(agent_results):
                 if isinstance(result, Exception):
-                    raise Exception("Failed to get result")
+                    raise Exception(f"Failed to get result from agent {agent_ids[idx]}: {result}")
                 if result["status"]["code"] not in [Code.OK.value, Code.QUEUED.value]:
-                    raise Exception("Failed to get result")
+                    raise Exception(
+                        f"Failed to get result from agent {agent_ids[idx]}: "
+                        f"status {result['status']['code']}"
+                    )
 
             # Store results directly without nesting - each agent's result is stored by agent_id
             if handle_result:
@@ -371,7 +493,7 @@ class RequestTranslator:
             logger.info(f"Experiment completed with results from {len(agent_results)} agents")
             return Code.OK
         except Exception as e:
-            logger.error(f"Failed to handle timeslot allocation: {e.args[0]}")
+            logger.error(f"Failed to handle timeslot allocation: {e}")
             if handle_result:
                 handle_result("error", str(e))
             return Code.FAILED

@@ -12,7 +12,7 @@ from quantnet_mq.schema.models import Status, experiment
 
 from quantnet_controller.common.request_translator import RequestTranslator
 from quantnet_controller.common.utils import generate_uuid
-from quantnet_controller.core import AbstractDatabase as DB
+from quantnet_controller.core import AbstractDatabase as DB, DBmodel
 
 
 logger = logging.getLogger(__name__)
@@ -219,7 +219,7 @@ class RequestManager:
 
         # Initialize shared DB handler once (class-level)
         if RequestManager._shared_db_handler is None:
-            RequestManager._shared_db_handler = DB().handler("Requests")
+            RequestManager._shared_db_handler = DB().handler(DBmodel.Request)
             # Create indices on id and type for fast queries
             # RequestManager._shared_db_handler.create_index("id")
             # RequestManager._shared_db_handler.create_index("type")

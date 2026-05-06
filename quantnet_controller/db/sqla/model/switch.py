@@ -92,10 +92,10 @@ def get_switch(id, *, session: "Session"):
 
     if result.channels:
         channels = []
-        channel_keys = ('ID', 'name', 'type', 'direction', 'wavelength', 'power', 'neighbor')
+        channel_keys = ('ID', 'name', 'type', 'direction', 'wavelength', 'power', 'length', 'neighbor')
         for ch in result.channels:
             channel = {k: v for k, v in ch.__dict__.items() if k in channel_keys}
-            neighbor_keys = ('idRef', 'systemRef', 'channelRef', 'loss', 'type', 'loss')
+            neighbor_keys = ('idRef', 'systemRef', 'channelRef', 'loss', 'type')
             neighbor = {k: v for k, v in ch.neighbor[0].__dict__.items() if k in neighbor_keys}
             channel.update({'neighbor': neighbor})
             channels.append(channel)

@@ -4,6 +4,7 @@ from quantnet_controller.db.broker import broker as db_broker, Broker
 class DBmodel():
     Node = "Node"
     Request = "Request"
+    Monitor = "Monitor"
     Calibration = "Calibration"
     PingPong = "PingPong"
     Blob = "Blob"

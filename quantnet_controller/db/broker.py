@@ -9,7 +9,6 @@ from typing import TYPE_CHECKING
 from sqlalchemy.engine import url  # , make_url
 from urllib.parse import urlparse
 from functools import wraps
-from quantnet_controller.common.config import config_get
 from quantnet_controller.utils.util import import_classes_from_package
 from quantnet_controller.db.nosql.collection import Collection
 from quantnet_controller.db.sqla.model import Blob
@@ -22,6 +21,12 @@ if TYPE_CHECKING:
 
 DATABASE_SECTION = 'database'
 __BROKER = None
+__BROKER_CONFIG = None
+
+
+def init_broker_config(config):
+    global __BROKER_CONFIG
+    __BROKER_CONFIG = config
 
 
 class BrokerType(Enum):
@@ -79,14 +84,14 @@ class Broker(object, metaclass=abc.ABCMeta):
 
 
 class SqlaBroker(Broker):
-    def __init__(self, **kwargs):
+    def __init__(self, config=None, **kwargs):
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         self.classes = import_classes_from_package(f"{current_file_directory}/sqla/model")
         self.default = Blob
 
 
 class MongoBroker(Broker):
-    def __init__(self, **kwargs):
+    def __init__(self, config=None, **kwargs):
         current_file_directory = os.path.dirname(os.path.abspath(__file__))
         self.classes = import_classes_from_package(f"{current_file_directory}/nosql/collection")
         self.default = Collection
@@ -99,14 +104,14 @@ def broker(func: "Callable[P, R]"):
     def wrapper(*args: "P.args", broker: "Optional[Broker]" = None, **kwargs):
         global __BROKER
         if __BROKER is None:
-            url = config_get(DATABASE_SECTION, 'default',
+            url = __BROKER_CONFIG.get(DATABASE_SECTION, 'default',
                              default="mongodb://localhost",
-                             check_config_table=False)
+                             check_config_table=False) if __BROKER_CONFIG else "mongodb://localhost"
             broker_type = check_database_type(url)
             if broker_type == BrokerType.SQLA:
-                broker = SqlaBroker()
+                broker = SqlaBroker(config=__BROKER_CONFIG)
             elif broker_type == BrokerType.MONGO:
-                broker = MongoBroker()
+                broker = MongoBroker(config=__BROKER_CONFIG)
             else:
                 raise Exception(f"{url} not implemented")
             __BROKER = broker
