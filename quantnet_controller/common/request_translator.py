@@ -365,7 +365,15 @@ class RequestTranslator:
         logger.info(f"Finding common timeslots from agents {agent_ids}")
         slots = {}
 
-        slot_mask = bitarray(max([get_timeslot_mask(i.sequences) for i in exp_def.agent_sequences]))
+        # Build the search pattern as the longest per-agent sequence, each capped to
+        # MAX_TIMESLOTS.  get_timeslot_mask() can return millions of slots for idle-wait
+        # agents (e.g. LBNL-C waiting for the whole experiment), which would exceed
+        # common_bit's length and make bitarray.find() return -1.
+        max_needed = max(
+            min(len(get_timeslot_mask(i.sequences)), Constants.MAX_TIMESLOTS)
+            for i in exp_def.agent_sequences
+        )
+        slot_mask = bitarray("1" * max_needed)
 
         common_bit = bitarray("1" * Constants.MAX_TIMESLOTS)
         for agent_id in agent_ids:
@@ -373,9 +381,15 @@ class RequestTranslator:
 
         start_index = (common_bit).find(slot_mask)
 
+        if start_index == -1:
+            raise Exception(
+                f"No common free timeslot found across agents {agent_ids} "
+                f"for experiment requiring {len(slot_mask)} slots"
+            )
+
         for i in range(len(exp_def.agent_sequences)):
             agent_sequence = exp_def.agent_sequences[i]
-            seq_length = len(get_timeslot_mask(agent_sequence.sequences))
+            seq_length = min(len(get_timeslot_mask(agent_sequence.sequences)), Constants.MAX_TIMESLOTS)
             slot = list(range(start_index, start_index + seq_length))
             slots[agent_ids[i]] = slot
         return slots
@@ -441,13 +455,16 @@ class RequestTranslator:
 
                 for sequence in agent_sequence.sequences:
                     timeslot = get_num_timeslot(sequence)
+                    assigned = timeslot_mask[:timeslot]
+                    timeslot_mask = timeslot_mask[timeslot:]
+                    if not assigned:
+                        continue
                     allocation = {
                         "expName": sequence.name,
                         "className": sequence.class_name,
                         "parameters": rpc_exp_params,
-                        "timeSlot": timeslot_mask[:timeslot],
+                        "timeSlot": assigned,
                     }
-                    timeslot_mask = timeslot_mask[timeslot:]
                     allocations.append(allocation)
                     logger.info(
                         f"Submitting sequences {sequence.name} to {agent_id} with slot {allocation['timeSlot']}"
@@ -501,7 +518,7 @@ class RequestTranslator:
                 handle_result("error", str(e))
             return Code.FAILED
 
-    async def submit(self, agent_id, param, timeout=5.0):
+    async def submit(self, agent_id, param, timeout=30.0):
         """
         Submit a task to the specified agent.
 
