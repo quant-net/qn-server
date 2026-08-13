@@ -105,7 +105,7 @@ class QuantnetServer:
                                 break  # Stop after first match to avoid duplicate loading
 
                 except (ModuleNotFoundError, SyntaxError, NameError) as e:
-                    logger.error(f"Problem with module import for {plugin.path}: {e}")
+                    logger.warning(f"Problem with module import for {plugin.path}: {e}")
                     continue
                 except Exception as e:
                     logger.error(f"Failed to load plugin {plugin} - {e}")
