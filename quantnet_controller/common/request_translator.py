@@ -350,7 +350,7 @@ class RequestTranslator:
         result = self.context.rm.get_exp_results(id)
         return result
 
-    def find_common_slot(self, agent_ids, availabilities, exp_def, prefill_map=None):
+    def find_common_slot(self, agent_ids, availabilities, exp_def):
         """
         Determine common timeslots across multiple agents.
 
@@ -360,9 +360,6 @@ class RequestTranslator:
         :type availabilities: dict
         :param exp_def: Experiment definition containing agent sequences.
         :type exp_def: Experiment
-        :param prefill_map: Optional mapping of agent IDs to prefill slot counts.
-                           When present, total slots per agent = experiment slots + prefill slots.
-        :type prefill_map: dict or None
 
         :returns: Dictionary mapping each agent ID to its allocated slot list.
         :rtype: dict
@@ -370,16 +367,12 @@ class RequestTranslator:
         logger.info(f"Finding common timeslots from agents {agent_ids}")
         slots = {}
 
-        if prefill_map is None:
-            prefill_map = {}
-
-        # Build the search pattern as the longest per-agent total (sequence + prefill).
+        # Build the search pattern as the longest per-agent sequence length.
         # Each is capped to MAX_TIMESLOTS. get_timeslot_mask() can return millions of
         # slots for idle-wait agents (e.g. LBNL-C waiting for the whole experiment),
         # which would exceed common_bit's length and make bitarray.find() return -1.
         max_needed = max(
-            min(len(get_timeslot_mask(i.sequences)) + prefill_map.get(agent_ids[idx], 0),
-                Constants.MAX_TIMESLOTS)
+            min(len(get_timeslot_mask(i.sequences)), Constants.MAX_TIMESLOTS)
             for idx, i in enumerate(exp_def.agent_sequences)
         )
         slot_mask = bitarray("1" * max_needed)
@@ -400,9 +393,7 @@ class RequestTranslator:
             agent_sequence = exp_def.agent_sequences[i]
             agent_id = agent_ids[i]
             seq_length = min(len(get_timeslot_mask(agent_sequence.sequences)), Constants.MAX_TIMESLOTS)
-            prefill_slots = prefill_map.get(agent_id, 0)
-            total_length = seq_length + prefill_slots
-            slot = list(range(start_index, start_index + total_length))
+            slot = list(range(start_index, start_index + seq_length))
             slots[agent_id] = slot
         return slots
 
@@ -429,9 +420,7 @@ class RequestTranslator:
 
             availabilities = await self.context.scheduler.get_timeslots(agent_ids, param)
         
-        # Read prefill_map from experiment definition
-        prefill_map = getattr(exp_def, 'prefill_map', None) or {}
-        slots_to_allocate = self.find_common_slot(agent_ids, availabilities, exp_def, prefill_map=prefill_map)
+        slots_to_allocate = self.find_common_slot(agent_ids, availabilities, exp_def)
 
         return start_time, slots_to_allocate
 
@@ -459,7 +448,6 @@ class RequestTranslator:
 
         try:
             start_time, timeslots = await self.get_slots_to_allocate(agent_ids, exp)
-            prefill_map = getattr(exp, 'prefill_map', None) or {}
             submit_tasks = []
 
             for idx in range(len(exp.agent_sequences)):
@@ -468,25 +456,6 @@ class RequestTranslator:
                 timeslot_mask = timeslots[agent_id]
                 logger.info(f"timeslots: {timeslots[agent_id]}")
                 allocations = []
-
-                # Insert prefill allocation if agent supports continuous entanglement
-                prefill_slots_count = prefill_map.get(agent_id, 0)
-                if prefill_slots_count > 0:
-                    assigned_prefill = list(range(len(timeslot_mask)))[:prefill_slots_count]
-                    if assigned_prefill:
-                        prefill_allocation = {
-                            "expName": "entanglement_prefill",
-                            "className": "entanglement_prefill",
-                            "parameters": rpc_exp_params,
-                            "timeSlot": assigned_prefill,
-                        }
-                        allocations.append(prefill_allocation)
-                        logger.info(
-                            f"Inserting prefill allocation ({prefill_slots_count} slots) "
-                            f"for agent {agent_id}"
-                        )
-                        # Consume prefill slots from the mask
-                        timeslot_mask = timeslot_mask[prefill_slots_count:]
 
                 for sequence in agent_sequence.sequences:
                     timeslot = get_num_timeslot(sequence)
