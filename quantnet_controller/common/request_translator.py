@@ -32,8 +32,8 @@ def _validate_agent_requirements(exp_def, available_nodes, heartbeat_timeout=Non
         it is considered stale.  Defaults to ``Constants.NODE_HEARTBEAT_TIMEOUT``.
     :type heartbeat_timeout: int | float | None
 
-    :returns: Tuple of (is_valid, required_types, available_types, missing_types)
-    :rtype: tuple
+    :returns: List of reachable (non-stale) nodes filtered by heartbeat timeout.
+    :rtype: list
 
     :raises ValueError: If validation fails with detailed message about missing agents.
     """
@@ -257,6 +257,8 @@ class RequestTranslator:
         status = self.context.rm.get_node_state(agent_id)
         return status["value"] == "IN_SPEC" if status else False
 
+
+
     async def start_experiment(self, parameters, handle_result=None):
         """
         Start experiment processing.
@@ -365,13 +367,13 @@ class RequestTranslator:
         logger.info(f"Finding common timeslots from agents {agent_ids}")
         slots = {}
 
-        # Build the search pattern as the longest per-agent sequence, each capped to
-        # MAX_TIMESLOTS.  get_timeslot_mask() can return millions of slots for idle-wait
-        # agents (e.g. LBNL-C waiting for the whole experiment), which would exceed
-        # common_bit's length and make bitarray.find() return -1.
+        # Build the search pattern as the longest per-agent sequence length.
+        # Each is capped to MAX_TIMESLOTS. get_timeslot_mask() can return millions of
+        # slots for idle-wait agents (e.g. LBNL-C waiting for the whole experiment),
+        # which would exceed common_bit's length and make bitarray.find() return -1.
         max_needed = max(
             min(len(get_timeslot_mask(i.sequences)), Constants.MAX_TIMESLOTS)
-            for i in exp_def.agent_sequences
+            for idx, i in enumerate(exp_def.agent_sequences)
         )
         slot_mask = bitarray("1" * max_needed)
 
@@ -389,9 +391,10 @@ class RequestTranslator:
 
         for i in range(len(exp_def.agent_sequences)):
             agent_sequence = exp_def.agent_sequences[i]
+            agent_id = agent_ids[i]
             seq_length = min(len(get_timeslot_mask(agent_sequence.sequences)), Constants.MAX_TIMESLOTS)
             slot = list(range(start_index, start_index + seq_length))
-            slots[agent_ids[i]] = slot
+            slots[agent_id] = slot
         return slots
 
     async def get_slots_to_allocate(self, agent_ids, exp_def):
@@ -416,6 +419,7 @@ class RequestTranslator:
             param["numSlots"] = Constants.MAX_TIMESLOTS
 
             availabilities = await self.context.scheduler.get_timeslots(agent_ids, param)
+        
         slots_to_allocate = self.find_common_slot(agent_ids, availabilities, exp_def)
 
         return start_time, slots_to_allocate

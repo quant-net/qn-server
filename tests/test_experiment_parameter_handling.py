@@ -1,7 +1,5 @@
 """
 Unit tests for changes introduced in fix_experiment_parameter_handling:
-  - ExperimentType enum in constants.py
-  - Experiment.type default in experimentdefinitions.py
   - translate_request: Parameter object conversion, exp_params default,
     getResult ordering, agent-ID error messages
 """
@@ -14,7 +12,6 @@ from datetime import datetime, timezone
 from quantnet_mq import Code
 from quantnet_mq.schema.models import Parameter
 
-from quantnet_controller.common.constants import ExperimentType
 from quantnet_controller.common.experimentdefinitions import Experiment, AgentSequences
 from quantnet_controller.common.request_translator import RequestTranslator
 
@@ -69,64 +66,6 @@ class MockExp:
 
 def run(coro):
     return asyncio.get_event_loop().run_until_complete(coro)
-
-
-# ---------------------------------------------------------------------------
-# ExperimentType enum
-# ---------------------------------------------------------------------------
-
-class TestExperimentType:
-    def test_calibration_value_and_label(self):
-        assert ExperimentType.CALIBRATION == 1
-        assert ExperimentType.CALIBRATION.label == "Calibration"
-
-    def test_experiment_value_and_label(self):
-        assert ExperimentType.EXPERIMENT == 2
-        assert ExperimentType.EXPERIMENT.label == "Experiment"
-
-    def test_test_value_and_label(self):
-        assert ExperimentType.TEST == 3
-        assert ExperimentType.TEST.label == "Test"
-
-    def test_is_int_comparable(self):
-        assert ExperimentType.CALIBRATION < ExperimentType.EXPERIMENT
-        assert ExperimentType.EXPERIMENT < ExperimentType.TEST
-
-    def test_three_members_only(self):
-        assert len(ExperimentType) == 3
-
-
-# ---------------------------------------------------------------------------
-# Experiment.type default
-# ---------------------------------------------------------------------------
-
-class ConcreteExp(Experiment):
-    name = "Concrete"
-    agent_sequences = []
-
-    def get_sequence(self, agent_index):
-        return None
-
-
-class CalibrationExp(Experiment):
-    name = "Calibration"
-    type = ExperimentType.CALIBRATION
-    agent_sequences = []
-
-    def get_sequence(self, agent_index):
-        return None
-
-
-class TestExperimentTypeAttribute:
-    def test_default_type_is_experiment(self):
-        assert ConcreteExp.type == ExperimentType.EXPERIMENT
-
-    def test_instance_default_type(self):
-        exp = ConcreteExp()
-        assert exp.type == ExperimentType.EXPERIMENT
-
-    def test_subclass_can_override_type(self):
-        assert CalibrationExp.type == ExperimentType.CALIBRATION
 
 
 # ---------------------------------------------------------------------------

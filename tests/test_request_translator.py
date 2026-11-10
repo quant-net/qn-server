@@ -3,9 +3,12 @@ Unit tests for request_translator module, focusing on agent validation logic.
 """
 
 import time
+import asyncio
 import pytest
+from datetime import timedelta
 from unittest.mock import Mock, MagicMock, patch
 from collections import Counter
+from bitarray import bitarray
 
 from quantnet_controller.common.request_translator import (
     _validate_agent_requirements,
@@ -19,8 +22,11 @@ from quantnet_controller.common.plugin import Path
 class MockSequence:
     """Mock Sequence class for testing."""
     def __init__(self, name, duration_ms=100):
+        from datetime import timedelta
         self.name = name
         self.duration_ms = duration_ms
+        self.duration = timedelta(milliseconds=duration_ms)
+        self.class_name = name
 
 
 class MockAgentSequence:
@@ -98,14 +104,16 @@ class TestValidateAgentRequirements:
             MockNode("node_2", "MNode", last_seen=now),
         ]
         
-        is_valid, required_types, available_types, missing_types = (
-            _validate_agent_requirements(simple_experiment, nodes)
-        )
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(simple_experiment, nodes)
         
-        assert is_valid is True
-        assert required_types == ["QNode", "MNode"]
-        assert available_types == ["QNode", "MNode"]
-        assert missing_types == []
+        # Verify nodes are reachable (function returns them)
+        assert len(reachable_nodes) == 2
+        available_types = [
+            x if isinstance(x, str) else x.systemSettings.type
+            for x in reachable_nodes
+        ]
+        assert sorted(available_types) == ["MNode", "QNode"]
 
     def test_missing_agent_type(self, simple_experiment):
         """Test validation fails when required agent type is missing."""
@@ -138,12 +146,11 @@ class TestValidateAgentRequirements:
             MockNode("node_3", "QNode", last_seen=now),  # Extra QNode
         ]
         
-        is_valid, required_types, available_types, missing_types = (
-            _validate_agent_requirements(simple_experiment, nodes)
-        )
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(simple_experiment, nodes)
         
-        assert is_valid is True
-        assert missing_types == []
+        # Verify all 3 nodes are reachable
+        assert len(reachable_nodes) == 3
 
     def test_complex_agent_requirements(self, qnode_mnode_qnode_experiment):
         """Test validation with complex requirements (QNode, MNode, QNode)."""
@@ -154,13 +161,11 @@ class TestValidateAgentRequirements:
             MockNode("node_3", "QNode", last_seen=now),
         ]
         
-        is_valid, required_types, available_types, missing_types = (
-            _validate_agent_requirements(qnode_mnode_qnode_experiment, nodes)
-        )
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(qnode_mnode_qnode_experiment, nodes)
         
-        assert is_valid is True
-        assert required_types == ["QNode", "MNode", "QNode"]
-        assert missing_types == []
+        # Verify all 3 nodes are reachable
+        assert len(reachable_nodes) == 3
 
     def test_empty_path(self, simple_experiment):
         """Test validation fails with empty path."""
@@ -177,24 +182,21 @@ class TestValidateAgentRequirements:
         now = time.time()
         nodes = [MockNode("node_1", "QNode", last_seen=now)]
         
-        is_valid, required_types, available_types, missing_types = (
-            _validate_agent_requirements(exp, nodes)
-        )
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(exp, nodes)
         
-        assert is_valid is True
-        assert required_types == []
-        assert missing_types == []
+        # Verify node is reachable (validation succeeded)
+        assert len(reachable_nodes) == 1
 
     def test_string_node_ids(self, simple_experiment):
         """Test validation with string node IDs instead of node objects."""
         nodes = ["QNode", "MNode"]
         
-        is_valid, required_types, available_types, missing_types = (
-            _validate_agent_requirements(simple_experiment, nodes)
-        )
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(simple_experiment, nodes)
         
-        assert is_valid is True
-        assert available_types == ["QNode", "MNode"]
+        # Verify both nodes are reachable
+        assert sorted(reachable_nodes) == ["MNode", "QNode"]
 
     def test_mixed_node_types(self, simple_experiment):
         """Test validation with mixed node objects and string IDs."""
@@ -204,12 +206,15 @@ class TestValidateAgentRequirements:
             "MNode",
         ]
         
-        is_valid, required_types, available_types, missing_types = (
-            _validate_agent_requirements(simple_experiment, nodes)
-        )
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(simple_experiment, nodes)
         
-        assert is_valid is True
-        assert available_types == ["QNode", "MNode"]
+        # Extract available types from reachable nodes
+        available_types = [
+            x if isinstance(x, str) else x.systemSettings.type
+            for x in reachable_nodes
+        ]
+        assert sorted(available_types) == ["MNode", "QNode"]
 
     def test_error_message_contains_details(self, dual_qnode_experiment):
         """Test that error message contains detailed information about missing agents."""
@@ -501,11 +506,15 @@ class TestHeartbeatTimeout:
             MockNode("node_2", "MNode", last_seen=now),
         ]
 
-        is_valid, _, available_types, _ = _validate_agent_requirements(
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(
             simple_experiment, nodes
         )
 
-        assert is_valid is True
+        available_types = [
+            x if isinstance(x, str) else x.systemSettings.type
+            for x in reachable_nodes
+        ]
         assert "QNode" in available_types
         assert "MNode" in available_types
 
@@ -545,11 +554,11 @@ class TestHeartbeatTimeout:
             MockNode("node_2", "MNode", last_seen=now - 30),
         ]
 
-        # With 60s timeout, should pass
-        is_valid, _, _, _ = _validate_agent_requirements(
+        # With 60s timeout, should pass (function returns reachable_nodes)
+        reachable_nodes = _validate_agent_requirements(
             simple_experiment, nodes, heartbeat_timeout=60
         )
-        assert is_valid is True
+        assert len(reachable_nodes) == 2
 
         # With strict 10s timeout, should fail
         with pytest.raises(ValueError):
@@ -574,8 +583,9 @@ class TestHeartbeatTimeout:
         """Test that string node IDs bypass the heartbeat check."""
         nodes = ["QNode", "MNode"]
 
-        is_valid, _, _, _ = _validate_agent_requirements(simple_experiment, nodes)
-        assert is_valid is True
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(simple_experiment, nodes)
+        assert len(reachable_nodes) == 2
 
     def test_stale_error_includes_node_ids(self, simple_experiment):
         """Test that the error message includes stale node IDs."""
@@ -616,9 +626,110 @@ class TestHeartbeatTimeout:
             MockNode("fresh_q", "QNode", last_seen=now),
         ]
 
-        is_valid, _, available_types, _ = _validate_agent_requirements(exp, nodes)
-        assert is_valid is True
-        assert available_types == ["QNode"]
+        # Function returns reachable_nodes on success (raises ValueError on failure)
+        reachable_nodes = _validate_agent_requirements(exp, nodes)
+        
+        # Only the fresh node should be reachable
+        assert len(reachable_nodes) == 1
+        assert reachable_nodes[0].systemSettings.type == "QNode"
+
+
+# Tests for prefill expressed as sequences
+class TestPrefillAsSequences:
+    """Test that prefill expressed as sequences works through normal flow."""
+
+    def test_prefill_sequence_timeslot_count(self):
+        """A prefill sequence with duration N*SLOTSIZE produces N timeslots."""
+        from quantnet_controller.common.experimentdefinitions import get_num_timeslot
+        from quantnet_controller.common.constants import Constants
+
+        prefill = MockSequence("entanglement_prefill", duration_ms=600)  # 6 * 100ms
+        assert get_num_timeslot(prefill) == 6
+
+    def test_prefill_sequence_in_timeslot_mask(self):
+        """Prefill sequence contributes to timeslot mask like any other sequence."""
+        from quantnet_controller.common.experimentdefinitions import get_timeslot_mask
+
+        prefill = MockSequence("entanglement_prefill", duration_ms=200)  # 2 slots
+        gate = MockSequence("Block_0_gate", duration_ms=100)             # 1 slot
+        mask = get_timeslot_mask([prefill, gate])
+        assert mask == "111"  # 2 + 1
+
+    def test_experiment_with_no_prefill_unchanged(self):
+        """Experiments without prefill sequences work identically."""
+        from quantnet_controller.common.experimentdefinitions import get_timeslot_mask
+
+        gate = MockSequence("Block_0_gate", duration_ms=100)
+        mask = get_timeslot_mask([gate])
+        assert mask == "1"
+
+
+class TestFindCommonSlotWithPrefillSequences:
+    """Test that find_common_slot handles prefill expressed as sequences."""
+
+    def test_slot_width_includes_prefill_sequence(self):
+        """Prefill sequence adds to the timeslot mask, widening the search."""
+        from quantnet_controller.common.request_translator import RequestTranslator
+        from quantnet_controller.common.constants import Constants
+
+        translator = RequestTranslator.__new__(RequestTranslator)
+
+        prefill = MockSequence("entanglement_prefill", duration_ms=200)  # 2 slots
+        gate = MockSequence("test_seq", duration_ms=100)                 # 1 slot
+        agent_seq = MockAgentSequence("seq", "QNode", [prefill, gate])
+        exp = MockExperiment("exp", [agent_seq])
+
+        avail_str = "111" + "0" * (Constants.MAX_TIMESLOTS - 3)
+        availabilities = {"agent1": avail_str}
+        agent_ids = ["agent1"]
+
+        slots = translator.find_common_slot(agent_ids, availabilities, exp)
+        assert len(slots["agent1"]) == 3  # 2 prefill + 1 gate
+
+    def test_no_prefill_sequence_unchanged(self):
+        """Without prefill sequence, slot width matches experiment sequences only."""
+        from quantnet_controller.common.request_translator import RequestTranslator
+        from quantnet_controller.common.constants import Constants
+
+        translator = RequestTranslator.__new__(RequestTranslator)
+
+        gate = MockSequence("test_seq", duration_ms=100)
+        agent_seq = MockAgentSequence("seq", "QNode", [gate])
+        exp = MockExperiment("exp", [agent_seq])
+
+        avail_str = "1" * Constants.MAX_TIMESLOTS
+        availabilities = {"agent1": avail_str}
+        agent_ids = ["agent1"]
+
+        slots = translator.find_common_slot(agent_ids, availabilities, exp)
+        assert len(slots["agent1"]) == 1
+
+    def test_mixed_agents_different_prefill(self):
+        """Different agents can have different prefill sequence durations."""
+        from quantnet_controller.common.request_translator import RequestTranslator
+        from quantnet_controller.common.constants import Constants
+
+        translator = RequestTranslator.__new__(RequestTranslator)
+
+        # Agent1: 3-slot prefill + 1-slot gate = 4 total
+        prefill1 = MockSequence("entanglement_prefill", duration_ms=300)
+        gate1 = MockSequence("test_seq", duration_ms=100)
+        agent_seq1 = MockAgentSequence("seq1", "QNode", [prefill1, gate1])
+
+        # Agent2: 1-slot prefill + 1-slot gate = 2 total
+        prefill2 = MockSequence("entanglement_prefill", duration_ms=100)
+        gate2 = MockSequence("test_seq", duration_ms=100)
+        agent_seq2 = MockAgentSequence("seq2", "QNode", [prefill2, gate2])
+
+        exp = MockExperiment("exp", [agent_seq1, agent_seq2])
+
+        avail_str = "1" * Constants.MAX_TIMESLOTS
+        availabilities = {"agent1": avail_str, "agent2": avail_str}
+        agent_ids = ["agent1", "agent2"]
+
+        slots = translator.find_common_slot(agent_ids, availabilities, exp)
+        assert len(slots["agent1"]) == 4
+        assert len(slots["agent2"]) == 2
 
 
 if __name__ == "__main__":
